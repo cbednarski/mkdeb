@@ -221,6 +221,29 @@ func (p *PackageSpec) ListFiles() ([]string, error) {
 	return files, nil
 }
 
+// ListEtcFiles lists all of the configuration files that are packaged under /etc
+// in the archive so they can be added to conffiles. These will be normalized
+// to include a leading /
+func (p *PackageSpec) ListEtcFiles() ([]string, error) {
+	etcFiles := []string{}
+
+	files, err := p.ListFiles()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, file := range files {
+		normFile, err := p.NormalizeFilename(file)
+		if err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(normFile, "etc") {
+			etcFiles = append(etcFiles, "/"+normFile)
+		}
+	}
+	return etcFiles, nil
+}
+
 // List control files returns a list of control files for this package
 func (p *PackageSpec) ListControlFiles() ([]string, error) {
 	files := []string{}

@@ -128,6 +128,28 @@ func TestNormalizeFilename(t *testing.T) {
 	}
 }
 
+func TestListEtcFiles(t *testing.T) {
+	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
+	p.AutoPath = path.Join("test-fixtures", "package1")
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %s", err)
+	}
+
+	files, err := p.ListEtcFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(files) == 0 {
+		t.Fatalf("No config files found")
+	}
+
+	expected := "/etc/package1/config"
+	if files[0] != expected {
+		t.Errorf("Expected %q got %q", expected, files[0])
+	}
+}
+
 func TestMD5SumFile(t *testing.T) {
 	sum, err := md5SumFile(path.Join("test-fixtures", "example-depends.json"))
 	if err != nil {
@@ -136,7 +158,7 @@ func TestMD5SumFile(t *testing.T) {
 
 	expected := "fc2562957a48b347b96da333f43fbaa6"
 	if sum != expected {
-		t.Errorf("Expected %q, got %q", expected, sum)
+		t.Errorf("Expected %q got %q", expected, sum)
 	}
 }
 
