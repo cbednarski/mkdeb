@@ -1,0 +1,12 @@
+{
+	"arch": "amd64",
+	"maintainer": "Chris Bednarski <banzaimonkey@gmail.com>",
+	"package": "mkdeb",
+	"version": "0.1.0",
+	"homepage": "https://github.com/cbednarski/mkdeb",
+	"description": "A CLI tool for building debian packages",
+	"files": {
+		"package1/binary": "/usr/local/bin/package1",
+		"package1/config": "/etc/package1/config"
+	}
+}
