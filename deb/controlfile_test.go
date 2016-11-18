@@ -4,7 +4,6 @@
 package deb
 
 import (
-	"bytes"
 	"path"
 	"testing"
 )
@@ -25,14 +24,13 @@ Priority: extra
 Homepage: https://github.com/cbednarski/mkdeb
 Description: A CLI tool for building debian packages
 `
-	buf := &bytes.Buffer{}
-	err = p.RenderControlFile(buf)
+	buf, err := p.RenderControlFile()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if buf.String() != expected {
-		t.Fatalf("Control file did not match expected\n%s\n--Found--\n%s\n", expected, buf.String())
+	if string(buf) != expected {
+		t.Fatalf("Control file did not match expected\n%s\n--Found--\n%s\n", expected, string(buf))
 	}
 }
 
@@ -49,20 +47,19 @@ Version: 0.1.0
 Architecture: amd64
 Maintainer: Chris Bednarski <banzaimonkey@gmail.com>
 Installed-Size: 0
-Depends: wget tree
+Depends: wget, tree
 Section: default
 Priority: extra
 Homepage: https://github.com/cbednarski/mkdeb
 Description: A CLI tool for building debian packages
 `
-	buf := &bytes.Buffer{}
-	err = p.RenderControlFile(buf)
+	buf, err := p.RenderControlFile()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if buf.String() != expected {
-		t.Fatalf("Control file did not match expected\n%s\n--Found--\n%s\n", expected, buf.String())
+	if string(buf) != expected {
+		t.Fatalf("Control file did not match expected\n%s\n--Found--\n%s\n", expected, string(buf))
 	}
 }
 
@@ -79,7 +76,7 @@ Version: 0.1.0
 Architecture: amd64
 Maintainer: Chris Bednarski <banzaimonkey@gmail.com>
 Installed-Size: 0
-Depends: wget tree
+Depends: wget, tree
 Conflicts: debpkg
 Replaces: debpkg
 Section: default
@@ -87,13 +84,12 @@ Priority: extra
 Homepage: https://github.com/cbednarski/mkdeb
 Description: A CLI tool for building debian packages
 `
-	buf := &bytes.Buffer{}
-	err = p.RenderControlFile(buf)
+	buf, err := p.RenderControlFile()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if buf.String() != expected {
-		t.Fatalf("Control file did not match expected\n%s\n--Found--\n%s\n", expected, buf.String())
+	if string(buf) != expected {
+		t.Fatalf("Control file did not match expected\n%s\n--Found--\n%s\n", expected, string(buf))
 	}
 }

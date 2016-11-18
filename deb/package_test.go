@@ -21,7 +21,7 @@ func TestFilename(t *testing.T) {
 	}
 	expected := "mkdeb-0.1.0-amd64.deb"
 	if p.Filename() != expected {
-		t.Fatalf("Expected filename to be %q, got %q", expected, p.Filename)
+		t.Fatalf("Expected filename to be %q, got %q", expected, p.Filename())
 	}
 }
 
@@ -147,6 +147,24 @@ func TestListEtcFiles(t *testing.T) {
 	expected := "/etc/package1/config"
 	if files[0] != expected {
 		t.Errorf("Expected %q got %q", expected, files[0])
+	}
+}
+
+func TestUpgradeConfig(t *testing.T) {
+	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
+	p.AutoPath = path.Join("test-fixtures", "package1")
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %s", err)
+	}
+	p.UpgradeConfigs = true
+
+	data, err := p.ListEtcFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data) != 0 {
+		t.Errorf("Found unexpected config files in conffiles list: %+v", data)
 	}
 }
 

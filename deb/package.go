@@ -7,6 +7,8 @@
 package deb
 
 import (
+	"archive/tar"
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -16,14 +18,44 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
 
 	"github.com/blakesmith/ar"
+	"github.com/klauspost/pgzip"
 )
 
-const DebianBinary = "2.0\n"
+const (
+	debianBinary = "2.0\n"
+)
+
+var (
+	reDepends     = regexp.MustCompile(`^[a-zA-Z0-9_-]+( \((>|>=|<|<=|=) ([0-9][0-9a-zA-Z.-]*?)\))?$`)
+	reReplacesEtc = regexp.MustCompile(`^[a-zA-Z0-9_-]+( \(<< ([0-9][0-9a-zA-Z.-]*?)\))?$`)
+
+	controlFiles = []string{
+		"preinst",
+		"postinst",
+		"prerm",
+		"postrm",
+	}
+
+	supportedArchitectures = []string{
+		"all", // This is used for non-binary packages
+		"amd64",
+		"arm64",
+		"armel",
+		"armhf",
+		"i386",
+		"mips",
+		"mipsel",
+		"powerpc",
+		"ppc64el",
+		"s390x",
+	}
+)
 
 // PackageSpec is parsed from JSON and
 type PackageSpec struct {
@@ -39,7 +71,11 @@ type PackageSpec struct {
 
 	// If PreserveSymlinks is true we will archive any symlinks instead of the
 	// contents of the files they points to.
-	PreserveSymlinks bool `json:"preservesymlinks,omitempty"`
+	PreserveSymlinks bool `json:"preserveSymlinks,omitempty"`
+
+	// If UpgradeConfigs is true we will exclude /etc from conffiles, allowing
+	// the package to update config files when it is upgraded
+	UpgradeConfigs bool `json:"upgradeConfigs,omitempty"`
 
 	// If AutoPath is specified we will use the contents of that directory to build the deb
 	AutoPath string `json:"autopath"`
@@ -64,6 +100,8 @@ type PackageSpec struct {
 	InstalledSize int64 // Kilobytes, rounded up. Derived from file sizes.
 }
 
+// DefaultPackageSpec includes default values for package specifications. This
+// simplifies configuration so a user need only specify required fields to build
 func DefaultPackageSpec() *PackageSpec {
 	return &PackageSpec{
 		Section:  "default",
@@ -72,7 +110,8 @@ func DefaultPackageSpec() *PackageSpec {
 	}
 }
 
-func NewPackageSpecFromJson(data []byte) (*PackageSpec, error) {
+// NewPackageSpecFromJSON creates a PackageSpec from JSON data
+func NewPackageSpecFromJSON(data []byte) (*PackageSpec, error) {
 	p := DefaultPackageSpec()
 	err := json.Unmarshal(data, p)
 	if err != nil {
@@ -81,6 +120,7 @@ func NewPackageSpecFromJson(data []byte) (*PackageSpec, error) {
 	return p, nil
 }
 
+// NewPackageSpecFromFile creates a PackageSpec from a JSON file
 func NewPackageSpecFromFile(filename string) (*PackageSpec, error) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -90,9 +130,12 @@ func NewPackageSpecFromFile(filename string) (*PackageSpec, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewPackageSpecFromJson(data)
+	return NewPackageSpecFromJSON(data)
 }
 
+// Validate checks the syntax of various text fields in PackageSpec to verify
+// that they conform to the debian package specification. Errors from this call
+// should be passed to the user so they can fix errors in their config file.
 func (p *PackageSpec) Validate() error {
 	// Verify required fields are specified
 	missing := []string{}
@@ -114,9 +157,34 @@ func (p *PackageSpec) Validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("These required fields are missing: %s", strings.Join(missing, ", "))
 	}
+	if !hasString(supportedArchitectures, p.Architecture) {
+		return fmt.Errorf("Arch %q is not supported; expected one of %s", p.Architecture, strings.Join(supportedArchitectures, ", "))
+	}
+	for _, dep := range p.Depends {
+		if !reDepends.MatchString(dep) {
+			return fmt.Errorf("Dependency %q is invalid; expected something like 'libc (= 5.1.2)' matching %q", dep, reDepends.String())
+		}
+	}
+	for _, replace := range p.Replaces {
+		if !reReplacesEtc.MatchString(replace) {
+			return fmt.Errorf("Replacement %q is invalid; expected something like 'libc (<< 5.1.2)' matching %q", replace, reReplacesEtc.String())
+		}
+	}
+	for _, conflict := range p.Conflicts {
+		if !reReplacesEtc.MatchString(conflict) {
+			return fmt.Errorf("Conflict %q is invalid; expected something like 'libc (<< 5.1.2)' matching %q", conflict, reReplacesEtc.String())
+		}
+	}
+	for _, breaks := range p.Breaks {
+		if !reReplacesEtc.MatchString(breaks) {
+			return fmt.Errorf("Break %q is invalid; expected something like 'libc (<< 5.1.2)' matching %q", breaks, reReplacesEtc.String())
+		}
+	}
 	return nil
 }
 
+// Filename derives the standard debian filename as package-version-arch.deb
+// based on the data specified in PackageSpec.
 func (p *PackageSpec) Filename() string {
 	return fmt.Sprintf("%s-%s-%s.deb", p.Package, p.Version, p.Architecture)
 }
@@ -158,20 +226,40 @@ func (p *PackageSpec) Build(target string) error {
 		return err
 	}
 
-	// Write the control files
-	controlArchive, err := p.CreateControlArchive()
+	// Create the control file archive
+	controlArchive, err := ioutil.TempFile(p.TempPath, "control")
 	if err != nil {
+		return fmt.Errorf("Failed creating temp file: %s", err)
+	}
+	defer file.Close()
+	// Write control files to it
+	if err := p.CreateControlArchive(controlArchive); err != nil {
 		return fmt.Errorf("Failed to compress control files: %s", err)
 	}
+	// Reset the cursor so we can io.Copy from the beginning of the file
+	if _, err := controlArchive.Seek(0, 0); err != nil {
+		return err
+	}
+	// Copy the control file archive into ar (.deb)
 	if err := writeFileToAr(archive, baseHeader, "control.tar.gz", controlArchive); err != nil {
 		return err
 	}
 
-	// Write the data files
-	dataArchive, err := p.CreateDataArchive()
+	// Create the data file archive
+	dataArchive, err := ioutil.TempFile(p.TempPath, "control")
 	if err != nil {
+		return fmt.Errorf("Failed creating temp file: %s", err)
+	}
+	defer file.Close()
+	// Write data files to it
+	if err := p.CreateDataArchive(dataArchive); err != nil {
 		return fmt.Errorf("Failed to compress data files: %s", err)
 	}
+	// Reset the cursor so we can io.Copy from the beginning of the file
+	if _, err := dataArchive.Seek(0, 0); err != nil {
+		return err
+	}
+	// Copy the data archive into the ar (.deb)
 	if err := writeFileToAr(archive, baseHeader, "data.tar.gz", dataArchive); err != nil {
 		return err
 	}
@@ -180,12 +268,19 @@ func (p *PackageSpec) Build(target string) error {
 }
 
 // RenderControlFile creates a debian control file for this package.
-func (p *PackageSpec) RenderControlFile(wr io.Writer) error {
-	t, err := template.New("controlfile").Funcs(template.FuncMap{"join": join}).Parse(ControlFileTemplate)
+func (p *PackageSpec) RenderControlFile() ([]byte, error) {
+	t, err := template.New("controlfile").Funcs(template.FuncMap{"join": join}).Parse(controlFileTemplate)
 	if err != nil {
+		// This should only happen if the template itself is messed up, which
+		// means the code has an error (not a user error)
 		panic(err)
 	}
-	return t.Execute(wr, p)
+	buf := &bytes.Buffer{}
+	err = t.Execute(buf, p)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // ListFiles returns a list of files that will be included in the archive. This
@@ -193,13 +288,6 @@ func (p *PackageSpec) RenderControlFile(wr io.Writer) error {
 // are going to store it in the archive.
 func (p *PackageSpec) ListFiles() ([]string, error) {
 	files := []string{}
-
-	exclude := []string{
-		"preinst",
-		"postinst",
-		"prerm",
-		"postrm",
-	}
 
 	// First, grab all the files in AutoPath that are not control files
 	if p.AutoPath != "" {
@@ -209,7 +297,7 @@ func (p *PackageSpec) ListFiles() ([]string, error) {
 				return nil
 			}
 			// Skip control files
-			if hasString(exclude, path.Base(filepath)) {
+			if hasString(controlFiles, path.Base(filepath)) {
 				return nil
 			}
 			files = append(files, filepath)
@@ -226,6 +314,13 @@ func (p *PackageSpec) ListFiles() ([]string, error) {
 // to include a leading /
 func (p *PackageSpec) ListEtcFiles() ([]string, error) {
 	etcFiles := []string{}
+
+	// If UpgradeConfigs is set we'll return an empty list. This prevents the
+	// config files from receiving special treatment during package upgrades and
+	// updates them like regular files.
+	if p.UpgradeConfigs {
+		return etcFiles, nil
+	}
 
 	files, err := p.ListFiles()
 	if err != nil {
@@ -244,7 +339,8 @@ func (p *PackageSpec) ListEtcFiles() ([]string, error) {
 	return etcFiles, nil
 }
 
-// List control files returns a list of control files for this package
+// ListControlFiles returns a list of optional control scripts including
+// pre/post/inst/rm that are used in this package.
 func (p *PackageSpec) ListControlFiles() ([]string, error) {
 	files := []string{}
 
@@ -308,7 +404,7 @@ func (p *PackageSpec) CalculateSize() (int64, error) {
 
 	for _, file := range files {
 		var fileinfo os.FileInfo
-		var err error = nil
+		var err error
 		if p.PreserveSymlinks {
 			fileinfo, err = os.Lstat(file)
 		} else {
@@ -345,28 +441,106 @@ func (p *PackageSpec) CalculateChecksums() ([]byte, error) {
 	}
 
 	for _, file := range files {
-		if sum, err := md5SumFile(file); err != nil {
+		sum, err := md5SumFile(file)
+		if err != nil {
 			return data, err
-		} else {
-			normFile, err := p.NormalizeFilename(file)
-			if err != nil {
-				return data, err
-			}
-			data = append(data, []byte(sum+"  "+normFile+"\n")...)
 		}
+		normFile, err := p.NormalizeFilename(file)
+		if err != nil {
+			return data, err
+		}
+		data = append(data, []byte(sum+"  "+normFile+"\n")...)
 	}
 
 	return data, nil
 }
 
-// CreateDataArchive
-func (p *PackageSpec) CreateDataArchive() (*os.File, error) {
-	return nil, nil
+// CreateDataArchive creates
+func (p *PackageSpec) CreateDataArchive(file *os.File) error {
+	return nil
 }
 
-// CreateControlTarball
-func (p *PackageSpec) CreateControlArchive() (*os.File, error) {
-	return nil, nil
+// CreateControlArchive creates the control.tar.gz part of the .deb package
+// This includes:
+//
+//	conffiles
+//	md5sums
+//	control
+//	pre/post/inst/rm scripts (if any)
+//
+// You must pass in a file handle that is open for writing.
+func (p *PackageSpec) CreateControlArchive(file *os.File) error {
+	// Create a compressed archive stream
+	zipwriter := pgzip.NewWriter(file)
+	defer zipwriter.Close()
+	archive := tar.NewWriter(zipwriter)
+	defer archive.Close()
+
+	header := tar.Header{
+		Mode:    644,
+		Uid:     0,
+		Gid:     0,
+		ModTime: time.Now(),
+		Uname:   "root",
+		Gname:   "root",
+	}
+
+	// Add md5sums
+	sumData, err := p.CalculateChecksums()
+	if err != nil {
+		return err
+	}
+	sumHeader := header
+	sumHeader.Name = "md5sums"
+	sumHeader.Size = int64(len(sumData))
+	archive.WriteHeader(&sumHeader)
+	archive.Write(sumData)
+
+	// Add conffiles
+	confFiles, err := p.ListEtcFiles()
+	if err != nil {
+		return err
+	}
+	confData := []byte(strings.Join(confFiles, "\n") + "\n")
+	confHeader := header
+	confHeader.Name = "conffiles"
+	confHeader.Size = int64(len(confData))
+	archive.WriteHeader(&confHeader)
+	archive.Write(confData)
+
+	// Add control file
+	controlData, err := p.RenderControlFile()
+	if err != nil {
+		return err
+	}
+	controlHeader := header
+	controlHeader.Name = "control"
+	controlHeader.Size = int64(len(controlData))
+	archive.WriteHeader(&controlHeader)
+	archive.Write(controlData)
+
+	// Add control scripts
+	scripts, err := p.ListControlFiles()
+	if err != nil {
+		return err
+	}
+	for _, script := range scripts {
+		scriptData, err := ioutil.ReadFile(script)
+		if err != nil {
+			return fmt.Errorf("Failed reading script %q: %s", script, err)
+		}
+
+		scriptHeader := header
+		scriptHeader.Name, err = p.NormalizeFilename(script)
+		if err != nil {
+			return err
+		}
+		scriptHeader.Size = int64(len(scriptData))
+		archive.WriteHeader(&scriptHeader)
+		archive.Write(scriptData)
+	}
+
+	return nil
 }
 
 // NormalizeFilename converts a local filename into a target archive filename
@@ -447,10 +621,10 @@ func writeFileToAr(archive *ar.Writer, header ar.Header, name string, file *os.F
 }
 
 func join(s []string) string {
-	return strings.Join(s, " ")
+	return strings.Join(s, ", ")
 }
 
-const ControlFileTemplate = `Package: {{ .Package }}
+const controlFileTemplate = `Package: {{ .Package }}
 Version: {{ .Version }}
 Architecture: {{ .Architecture}}
 Maintainer: {{ .Maintainer }}
