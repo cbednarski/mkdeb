@@ -85,20 +85,79 @@ func TestListFiles(t *testing.T) {
 }
 
 func TestCalculateSize(t *testing.T) {
-	// find deb/test-fixtures/package1/ | xargs cat 2>/dev/null | wc -c
-	// divide by 1024 to go from bytes => kilobytes
 	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
 	p.AutoPath = path.Join("test-fixtures", "package1")
 	if err != nil {
 		t.Fatalf("Failed to load fixture: %s", err)
 	}
 
+	// find deb/test-fixtures/package1/ | xargs cat 2>/dev/null | wc -c
+	// divide by 1024 and round up remainder to go from bytes => kilobytes
 	expected := int64(1)
+
 	size, err := p.CalculateSize()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if size != expected {
 		t.Errorf("Expected %d got %d", expected, size)
+	}
+}
+
+func TestNormalizeFilename(t *testing.T) {
+	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
+	p.AutoPath = path.Join("test-fixtures", "package1")
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %s", err)
+	}
+
+	configPath := path.Join("test-fixtures", "package1", "etc", "package1", "config")
+	configExpected := "etc/package1/config"
+	if filename, err := p.NormalizeFilename(configPath); err != nil {
+		t.Fatal()
+	} else if filename != configExpected {
+		t.Errorf("Expected %q got %q", configExpected, filename)
+	}
+
+	hardcodedPath := "package1/binary"
+	hardcodedExpected := "usr/local/bin/package1"
+	if filename, err := p.NormalizeFilename(hardcodedPath); err != nil {
+		t.Fatal()
+	} else if filename != hardcodedExpected {
+		t.Errorf("Expected %q got %q", hardcodedExpected, filename)
+	}
+}
+
+func TestMD5SumFile(t *testing.T) {
+	sum, err := md5SumFile(path.Join("test-fixtures", "example-depends.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := "fc2562957a48b347b96da333f43fbaa6"
+	if sum != expected {
+		t.Errorf("Expected %q, got %q", expected, sum)
+	}
+}
+
+func TestCalculateChecksums(t *testing.T) {
+	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
+	p.AutoPath = path.Join("test-fixtures", "package1")
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %s", err)
+	}
+
+	expected := `adcc07f30ee844b18eab61f69f8c32c4  etc/package1/config
+0940b4d946e3e2b8bbfdf5cfcf722518  usr/local/bin/package1
+`
+
+	data, err := p.CalculateChecksums()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := string(data)
+	if found != expected {
+		t.Errorf("--Expected--\n%s\n--Found--\n%s\n", expected, found)
 	}
 }

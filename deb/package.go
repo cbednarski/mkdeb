@@ -7,6 +7,8 @@
 package deb
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -305,9 +307,33 @@ func (p *PackageSpec) CalculateSize() (int64, error) {
 	return size, nil
 }
 
-// CalculateChecksums
-func (p *PackageSpec) CalculateChecksums() map[string]string {
-	return nil
+// CalculateChecksums produces the contents of the md5sums file with the
+// following format:
+//
+//	checksum  file1
+//	checksum  file2
+//
+// All files in ListFiles are included
+func (p *PackageSpec) CalculateChecksums() ([]byte, error) {
+	data := []byte{}
+	files, err := p.ListFiles()
+	if err != nil {
+		return data, err
+	}
+
+	for _, file := range files {
+		if sum, err := md5SumFile(file); err != nil {
+			return data, err
+		} else {
+			normFile, err := p.NormalizeFilename(file)
+			if err != nil {
+				return data, err
+			}
+			data = append(data, []byte(sum+"  "+normFile+"\n")...)
+		}
+	}
+
+	return data, nil
 }
 
 // CreateDataArchive
@@ -318,6 +344,21 @@ func (p *PackageSpec) CreateDataArchive() (*os.File, error) {
 // CreateControlTarball
 func (p *PackageSpec) CreateControlArchive() (*os.File, error) {
 	return nil, nil
+}
+
+// NormalizeFilename converts a local filename into a target archive filename
+// by either using the PackageSpec.Files map or by stripping the AutoPath prefix
+// from the file path. For example, deb-pkg/etc/blah will become ./etc/blah and
+// a file mapped from config to /etc/config will become ./etc/config in the archive
+func (p *PackageSpec) NormalizeFilename(filename string) (string, error) {
+	if target, ok := p.Files[filename]; ok {
+		return path.Join(".", target), nil
+	}
+	fpath, err := filepath.Rel(p.AutoPath, filename)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(".", fpath), nil
 }
 
 func fileExists(path string) bool {
@@ -332,6 +373,22 @@ func hasString(items []string, search string) bool {
 		}
 	}
 	return false
+}
+
+func md5SumFile(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+
+	hash := md5.New()
+	_, err = io.Copy(hash, file)
+	if err != nil {
+		return "", err
+	}
+
+	sum := hash.Sum([]byte{})
+	return hex.EncodeToString(sum), nil
 }
 
 func writeBytesToAr(archive *ar.Writer, header ar.Header, name string, data []byte) error {
