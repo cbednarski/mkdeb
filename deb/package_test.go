@@ -1,6 +1,7 @@
 package deb
 
 import (
+	"os"
 	"path"
 	"testing"
 )
@@ -210,4 +211,8 @@ func TestBuild(t *testing.T) {
 	}
 
 	err = p.Build("output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(path.Join("output", p.Filename()))
 }
