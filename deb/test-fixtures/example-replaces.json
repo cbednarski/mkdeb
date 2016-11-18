@@ -1,5 +1,5 @@
 {
-	"arch": "amd64",
+	"architecture": "amd64",
 	"maintainer": "Chris Bednarski <banzaimonkey@gmail.com>",
 	"depends": ["wget", "tree"],
 	"package": "mkdeb",

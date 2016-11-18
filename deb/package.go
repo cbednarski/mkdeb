@@ -2,8 +2,14 @@
 // debian package specification. It does not handle source, source package, or
 // changes.
 //
-// See https://www.debian.org/doc/debian-policy/ch-controlfields.html
-// See https://www.debian.org/doc/manuals/debian-faq/ch-pkg_basics.en.html
+// The bulk of the configuration options and functionalty are associated with
+// PackageSpec. Refer to that section for more details.
+//
+// References
+//
+// https://www.debian.org/doc/debian-policy/ch-controlfields.html
+//
+// https://www.debian.org/doc/manuals/debian-faq/ch-pkg_basics.en.html
 package deb
 
 import (
@@ -57,44 +63,120 @@ var (
 	}
 )
 
-// PackageSpec is parsed from JSON and
+// PackageSpec is parsed from JSON and initializes both build time parameters
+// and the metadata inside the .deb package.
+//
+// Required Fields
+//
+// The following fields are required by the debian package specification:
+//
+// Package is the name of your package, and typically matches the name of your
+// main program.
+//
+// Version is a debian version string. See the reference for more details.
+// This field is not currently validated except to verify that it is specified,
+// but if the syntax is invalid you will not be able to install the package.
+//
+// Architecture is the CPU architecture your package is compiled for. If your
+// package does not include a compiled binary you can set this to "all".
+//
+// Maintainer should indicate contact information for the package, such as
+// Chris Bednarski <chris@example.com>
+//
+// Description should briefly explain what your package is used for. Only a
+// single line is currently supported.
+//
+// Optional Fields
+//
+// Depends is used to specify whether your package depends on other packages.
+// Dependencies should be specified using the following syntax
+//
+//	"depends": [
+//	    "curl (>= 7.0.0)",
+//	    "python (= 2.7.12)",
+//	    "tree"
+//	]
+//
+// Conflicts, Breaks, and Replaces work in a very similar way. For additional
+// information on when you should use optional fields and how to specify them,
+// refer to the debian package specification.
+//
+// Homepage should link to your package's source repository, if applicable.
+// Otherwise link to your website.
+//
+// Control Scripts
+//
+// You may need to perform additional setup (or cleanup) when (un)installing a
+// package. You can do this through the control scripts: preinst, postinst,
+// prerm, and postrm.
+//
+// These are commonly used to create users, start or stop services, or perform
+// cleanup when a package is uninstalled.
+//
+// AutoPath
+//
+// The Build method is designed to automatically fill in most of the build
+// configuration based on files it finds on the filesystem. If AutoPath is set
+// to a non-empty value it will be scanned for pre/post/inst/rm scripts as well
+// as configuration files and binaries to be automatically included in the .deb.
+//
+// To disable the automatic behavior set AutoPath to an empty string or dash "-".
+// Whether or not AutoPath is used you may supplement the list of files to be
+// included by specifying the Files field.
+//
+// Build Time Options
+//
+// TempPath controls where intermediate files are written during the build. This
+// defaults to the system temp directory (usually /tmp).
+//
+// UpgradeConfigs causes a package upgrade to replace all of the config files.
+// By default files under /etc are left as-is when upgrading a package so you
+// can keep changes made to your config files, but if you want to upgrade the
+// config files themselves you will need to set UpgradeConfigs to true.
+//
+// PreserveSymlinks writes symlinks to the archive. By default the contents of
+// the file the symlink is pointing to is copied into the .deb package.
+//
+// Derived Fields
+//
+// InstalledSize is calculated based on the total size of your files and control
+// scripts. You should not specify this yourself.
+//
+// For details on how to use pre/post/inst/rm and various .deb-specific fields
+// please refere to the debian package specification:
+//
+// https://www.debian.org/doc/debian-policy/ch-controlfields.html
+//
+// https://www.debian.org/doc/manuals/debian-faq/ch-pkg_basics.en.html
 type PackageSpec struct {
-	// Binary data
-	Preinst  string            `json:"preinst,omitempty"`
-	Postinst string            `json:"postinst,omitempty"`
-	Prerm    string            `json:"prerm,omitempty"`
-	Postrm   string            `json:"postrm,omitempty"`
-	Files    map[string]string `json:"files,omitempty"`
-
-	// If TempPath is specified we will build the archives there instead of in /tmp
-	TempPath string `json:"tempath,omitempty"`
-
-	// If PreserveSymlinks is true we will archive any symlinks instead of the
-	// contents of the files they points to.
-	PreserveSymlinks bool `json:"preserveSymlinks,omitempty"`
-
-	// If UpgradeConfigs is true we will exclude /etc from conffiles, allowing
-	// the package to update config files when it is upgraded
-	UpgradeConfigs bool `json:"upgradeConfigs,omitempty"`
-
-	// If AutoPath is specified we will use the contents of that directory to build the deb
-	AutoPath string `json:"autopath"`
-
 	// Binary Debian Control File - Required fields
-	Package      string `json:"package"`
-	Version      string `json:"version"`
-	Architecture string `json:"arch"`
-	Maintainer   string `json:"maintainer"`
-	Description  string `json:"description"`
+	Package      string
+	Version      string
+	Architecture string
+	Maintainer   string
+	Description  string
 
 	// Optional Fields
-	Depends   []string `json:"depends,omitempty"`
-	Conflicts []string `json:"conflicts,omitempty"`
-	Breaks    []string `json:"breaks,omitempty"`
-	Replaces  []string `json:"replaces,omitempty"`
-	Section   string   `json:"section,omitempty"`
-	Priority  string   `json:"priority,omitempty"`
-	Homepage  string   `json:"homepage,omitempty"`
+	Depends   []string
+	Conflicts []string
+	Breaks    []string
+	Replaces  []string
+	Section   string // Defaults to "default"
+	Priority  string // Defaults to "extra"
+	Homepage  string
+
+	// Control Scripts
+	Preinst  string
+	Postinst string
+	Prerm    string
+	Postrm   string
+
+	// Build time options
+	AutoPath         string // Defaults to "deb-pkg"
+	Files            map[string]string
+	TempPath         string
+	PreserveSymlinks bool
+	UpgradeConfigs   bool
 
 	// Derived fields
 	InstalledSize int64 // Kilobytes, rounded up. Derived from file sizes.
@@ -190,7 +272,9 @@ func (p *PackageSpec) Filename() string {
 }
 
 // Build creates a .deb file in the target directory. The name is defived from
-// Filename().
+// Filename() so you can find it with:
+//
+//	path.Join(target, PackageSpec.Filename())
 func (p *PackageSpec) Build(target string) error {
 	err := p.Validate()
 	if err != nil {
@@ -204,7 +288,12 @@ func (p *PackageSpec) Build(target string) error {
 	// control.tar.gz
 	// data.tar.gz
 
-	file, err := os.Create(target)
+	err = os.MkdirAll(target, 0755)
+	if err != nil {
+		return fmt.Errorf("Unable to create target directory %q: %s", target, err)
+	}
+
+	file, err := os.Create(path.Join(target, p.Filename()))
 	if err != nil {
 		return err
 	}
@@ -231,8 +320,9 @@ func (p *PackageSpec) Build(target string) error {
 	if err != nil {
 		return fmt.Errorf("Failed creating temp file: %s", err)
 	}
-	defer file.Close()
-	// Write control files to it
+	defer controlArchive.Close()
+	defer os.Remove(controlArchive.Name())
+	// Write control files to the archive
 	if err := p.CreateControlArchive(controlArchive); err != nil {
 		return fmt.Errorf("Failed to compress control files: %s", err)
 	}
@@ -250,8 +340,9 @@ func (p *PackageSpec) Build(target string) error {
 	if err != nil {
 		return fmt.Errorf("Failed creating temp file: %s", err)
 	}
-	defer file.Close()
-	// Write data files to it
+	defer dataArchive.Close()
+	defer os.Remove(dataArchive.Name())
+	// Write data files to the archive
 	if err := p.CreateDataArchive(dataArchive); err != nil {
 		return fmt.Errorf("Failed to compress data files: %s", err)
 	}
@@ -290,7 +381,7 @@ func (p *PackageSpec) ListFiles() ([]string, error) {
 	files := []string{}
 
 	// First, grab all the files in AutoPath that are not control files
-	if p.AutoPath != "" {
+	if p.AutoPath != "" && p.AutoPath != "-" {
 		if err := filepath.Walk(p.AutoPath, func(filepath string, info os.FileInfo, err error) error {
 			// Skip directories
 			if info.IsDir() {
@@ -348,7 +439,7 @@ func (p *PackageSpec) ListControlFiles() ([]string, error) {
 
 	if p.Preinst != "" {
 		files = append(files, p.Preinst)
-	} else if p.AutoPath != "" {
+	} else if p.AutoPath != "" && p.AutoPath != "-" {
 		filepath := path.Join(p.AutoPath, "preinst")
 		if fileExists(filepath) {
 			files = append(files, filepath)
@@ -357,7 +448,7 @@ func (p *PackageSpec) ListControlFiles() ([]string, error) {
 
 	if p.Postinst != "" {
 		files = append(files, p.Postinst)
-	} else if p.AutoPath != "" {
+	} else if p.AutoPath != "" && p.AutoPath != "-" {
 		filepath := path.Join(p.AutoPath, "postinst")
 		if fileExists(filepath) {
 			files = append(files, filepath)
@@ -366,7 +457,7 @@ func (p *PackageSpec) ListControlFiles() ([]string, error) {
 
 	if p.Prerm != "" {
 		files = append(files, p.Prerm)
-	} else if p.AutoPath != "" {
+	} else if p.AutoPath != "" && p.AutoPath != "-" {
 		filepath := path.Join(p.AutoPath, "prerm")
 		if fileExists(filepath) {
 			files = append(files, filepath)
@@ -375,7 +466,7 @@ func (p *PackageSpec) ListControlFiles() ([]string, error) {
 
 	if p.Postrm != "" {
 		files = append(files, p.Postrm)
-	} else if p.AutoPath != "" {
+	} else if p.AutoPath != "" && p.AutoPath != "-" {
 		filepath := path.Join(p.AutoPath, "postrm")
 		if fileExists(filepath) {
 			files = append(files, filepath)
@@ -432,7 +523,7 @@ func (p *PackageSpec) CalculateSize() (int64, error) {
 //	checksum  file1
 //	checksum  file2
 //
-// All files in ListFiles are included
+// All files returned by ListFiles() are included
 func (p *PackageSpec) CalculateChecksums() ([]byte, error) {
 	data := []byte{}
 	files, err := p.ListFiles()
@@ -531,6 +622,7 @@ func (p *PackageSpec) CreateControlArchive(file *os.File) error {
 		}
 
 		scriptHeader := header
+		scriptHeader.Mode = 755
 		scriptHeader.Name, err = p.NormalizeFilename(script)
 		if err != nil {
 			return err
@@ -551,11 +643,14 @@ func (p *PackageSpec) NormalizeFilename(filename string) (string, error) {
 	if target, ok := p.Files[filename]; ok {
 		return path.Join(".", target), nil
 	}
-	fpath, err := filepath.Rel(p.AutoPath, filename)
-	if err != nil {
-		return "", err
+	if p.AutoPath != "" && p.AutoPath != "-" {
+		fpath, err := filepath.Rel(p.AutoPath, filename)
+		if err != nil {
+			return "", err
+		}
+		return path.Join(".", fpath), nil
 	}
-	return path.Join(".", fpath), nil
+	return "", fmt.Errorf("Not sure what to do with %q because it is not specified in files and autopath is disabled", filename)
 }
 
 func fileExists(path string) bool {

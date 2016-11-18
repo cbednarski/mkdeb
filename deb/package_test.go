@@ -174,7 +174,7 @@ func TestMD5SumFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := "fc2562957a48b347b96da333f43fbaa6"
+	expected := "e8f79d2b1995292911388a9d13a9528d"
 	if sum != expected {
 		t.Errorf("Expected %q got %q", expected, sum)
 	}
@@ -200,4 +200,14 @@ func TestCalculateChecksums(t *testing.T) {
 	if found != expected {
 		t.Errorf("--Expected--\n%s\n--Found--\n%s\n", expected, found)
 	}
+}
+
+func TestBuild(t *testing.T) {
+	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
+	p.AutoPath = path.Join("test-fixtures", "package1")
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %s", err)
+	}
+
+	err = p.Build("output")
 }
