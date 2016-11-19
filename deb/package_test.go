@@ -46,10 +46,10 @@ func TestValidate(t *testing.T) {
 
 func TestListControlFiles(t *testing.T) {
 	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	p.AutoPath = path.Join("test-fixtures", "package1")
 	if err != nil {
 		t.Fatalf("Failed to load fixture: %s", err)
 	}
+	p.AutoPath = path.Join("test-fixtures", "package1")
 
 	files, err := p.ListControlFiles()
 	if err != nil {
@@ -64,10 +64,10 @@ func TestListControlFiles(t *testing.T) {
 
 func TestListFiles(t *testing.T) {
 	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	p.AutoPath = path.Join("test-fixtures", "package1")
 	if err != nil {
 		t.Fatalf("Failed to load fixture: %s", err)
 	}
+	p.AutoPath = path.Join("test-fixtures", "package1")
 
 	files, err := p.ListFiles()
 	if err != nil {
@@ -87,10 +87,10 @@ func TestListFiles(t *testing.T) {
 
 func TestCalculateSize(t *testing.T) {
 	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	p.AutoPath = path.Join("test-fixtures", "package1")
 	if err != nil {
 		t.Fatalf("Failed to load fixture: %s", err)
 	}
+	p.AutoPath = path.Join("test-fixtures", "package1")
 
 	// find deb/test-fixtures/package1/ | xargs cat 2>/dev/null | wc -c
 	// divide by 1024 and round up remainder to go from bytes => kilobytes
@@ -107,10 +107,10 @@ func TestCalculateSize(t *testing.T) {
 
 func TestNormalizeFilename(t *testing.T) {
 	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	p.AutoPath = path.Join("test-fixtures", "package1")
 	if err != nil {
 		t.Fatalf("Failed to load fixture: %s", err)
 	}
+	p.AutoPath = path.Join("test-fixtures", "package1")
 
 	configPath := path.Join("test-fixtures", "package1", "etc", "package1", "config")
 	configExpected := "etc/package1/config"
@@ -131,10 +131,10 @@ func TestNormalizeFilename(t *testing.T) {
 
 func TestListEtcFiles(t *testing.T) {
 	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	p.AutoPath = path.Join("test-fixtures", "package1")
 	if err != nil {
 		t.Fatalf("Failed to load fixture: %s", err)
 	}
+	p.AutoPath = path.Join("test-fixtures", "package1")
 
 	files, err := p.ListEtcFiles()
 	if err != nil {
@@ -153,10 +153,10 @@ func TestListEtcFiles(t *testing.T) {
 
 func TestUpgradeConfig(t *testing.T) {
 	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	p.AutoPath = path.Join("test-fixtures", "package1")
 	if err != nil {
 		t.Fatalf("Failed to load fixture: %s", err)
 	}
+	p.AutoPath = path.Join("test-fixtures", "package1")
 	p.UpgradeConfigs = true
 
 	data, err := p.ListEtcFiles()
@@ -183,10 +183,10 @@ func TestMD5SumFile(t *testing.T) {
 
 func TestCalculateChecksums(t *testing.T) {
 	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	p.AutoPath = path.Join("test-fixtures", "package1")
 	if err != nil {
 		t.Fatalf("Failed to load fixture: %s", err)
 	}
+	p.AutoPath = path.Join("test-fixtures", "package1")
 
 	expected := `adcc07f30ee844b18eab61f69f8c32c4  etc/package1/config
 0940b4d946e3e2b8bbfdf5cfcf722518  usr/local/bin/package1
@@ -203,12 +203,42 @@ func TestCalculateChecksums(t *testing.T) {
 	}
 }
 
-func TestBuild(t *testing.T) {
+func TestCreateDataArchive(t *testing.T) {
 	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	p.AutoPath = path.Join("test-fixtures", "package1")
 	if err != nil {
 		t.Fatalf("Failed to load fixture: %s", err)
 	}
+	p.AutoPath = path.Join("test-fixtures", "package1")
+	p.TempPath = "test-fixtures"
+
+	filename := "test-data.tar.gz"
+	if err := p.CreateDataArchive(filename); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filename)
+}
+
+func TestCreateControlArchive(t *testing.T) {
+	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %s", err)
+	}
+	p.AutoPath = path.Join("test-fixtures", "package1")
+	p.TempPath = "test-fixtures"
+
+	filename := "test-control.tar.gz"
+	if err := p.CreateControlArchive(filename); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(filename)
+}
+
+func TestBuild(t *testing.T) {
+	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %s", err)
+	}
+	p.AutoPath = path.Join("test-fixtures", "package1")
 
 	err = p.Build("output")
 	if err != nil {

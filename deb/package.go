@@ -15,12 +15,14 @@ package deb
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -295,7 +297,7 @@ func (p *PackageSpec) Build(target string) error {
 
 	file, err := os.Create(path.Join(target, p.Filename()))
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to create build target: %s", err)
 	}
 
 	archive := ar.NewWriter(file)
@@ -312,46 +314,24 @@ func (p *PackageSpec) Build(target string) error {
 
 	// Write the debian binary version (hard-coded to 2.0)
 	if err := writeBytesToAr(archive, baseHeader, "debian-binary", []byte("2.0\n")); err != nil {
-		return err
+		return fmt.Errorf("Failed to write debian-binary: %s", err)
 	}
 
-	// Create the control file archive
-	controlArchive, err := ioutil.TempFile(p.TempPath, "control")
-	if err != nil {
-		return fmt.Errorf("Failed creating temp file: %s", err)
-	}
-	defer controlArchive.Close()
-	defer os.Remove(controlArchive.Name())
-	// Write control files to the archive
-	if err := p.CreateControlArchive(controlArchive); err != nil {
+	if err := p.CreateControlArchive("control.tar.gz"); err != nil {
 		return fmt.Errorf("Failed to compress control files: %s", err)
 	}
-	// Reset the cursor so we can io.Copy from the beginning of the file
-	if _, err := controlArchive.Seek(0, 0); err != nil {
-		return err
-	}
+	defer os.Remove("control.tar.gz")
 	// Copy the control file archive into ar (.deb)
-	if err := writeFileToAr(archive, baseHeader, "control.tar.gz", controlArchive); err != nil {
+	if err := writeFileToAr(archive, baseHeader, "control.tar.gz", "control.tar.gz"); err != nil {
 		return err
 	}
 
-	// Create the data file archive
-	dataArchive, err := ioutil.TempFile(p.TempPath, "control")
-	if err != nil {
-		return fmt.Errorf("Failed creating temp file: %s", err)
-	}
-	defer dataArchive.Close()
-	defer os.Remove(dataArchive.Name())
-	// Write data files to the archive
-	if err := p.CreateDataArchive(dataArchive); err != nil {
+	if err := p.CreateDataArchive("data.tar.gz"); err != nil {
 		return fmt.Errorf("Failed to compress data files: %s", err)
 	}
-	// Reset the cursor so we can io.Copy from the beginning of the file
-	if _, err := dataArchive.Seek(0, 0); err != nil {
-		return err
-	}
+	defer os.Remove("data.tar.gz")
 	// Copy the data archive into the ar (.deb)
-	if err := writeFileToAr(archive, baseHeader, "data.tar.gz", dataArchive); err != nil {
+	if err := writeFileToAr(archive, baseHeader, "data.tar.gz", "data.tar.gz"); err != nil {
 		return err
 	}
 
@@ -547,7 +527,59 @@ func (p *PackageSpec) CalculateChecksums() ([]byte, error) {
 }
 
 // CreateDataArchive creates
-func (p *PackageSpec) CreateDataArchive(file *os.File) error {
+func (p *PackageSpec) CreateDataArchive(target string) error {
+	file, err := os.Create(target)
+	if err != nil {
+		return fmt.Errorf("Failed to create data archive %q: %s", target, err)
+	}
+	defer file.Close()
+
+	// Create a compressed archive stream
+	zipwriter := pgzip.NewWriter(file)
+	defer zipwriter.Close()
+	archive := tar.NewWriter(zipwriter)
+	defer archive.Close()
+
+	header := tar.Header{
+		Uid:   0,
+		Gid:   0,
+		Uname: "root",
+		Gname: "root",
+	}
+
+	files, err := p.ListFiles()
+	if err != nil {
+		return err
+	}
+	for _, filename := range files {
+		dataFile, err := os.Open(filename)
+		if err != nil {
+			return err
+		}
+		defer dataFile.Close()
+
+		info, err := dataFile.Stat()
+		if err != nil {
+			return err
+		}
+
+		target, err := p.NormalizeFilename(filename)
+		if err != nil {
+			return err
+		}
+
+		fileHeader := header
+		fileHeader.Name = target
+		fileHeader.Size = info.Size()
+		fileHeader.Mode = 755
+		// fileHeader.Mode = int64(info.Mode().Perm())
+		fileHeader.ModTime = info.ModTime()
+		archive.WriteHeader(&fileHeader)
+		_, err = io.Copy(archive, dataFile)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -560,9 +592,15 @@ func (p *PackageSpec) CreateDataArchive(file *os.File) error {
 //	pre/post/inst/rm scripts (if any)
 //
 // You must pass in a file handle that is open for writing.
-func (p *PackageSpec) CreateControlArchive(file *os.File) error {
+func (p *PackageSpec) CreateControlArchive(target string) error {
+	file, err := os.Create(target)
+	if err != nil {
+		return fmt.Errorf("Failed to create control archive %q: %s", target, err)
+	}
+	defer file.Close()
+
 	// Create a compressed archive stream
-	zipwriter := pgzip.NewWriter(file)
+	zipwriter := gzip.NewWriter(file)
 	defer zipwriter.Close()
 	archive := tar.NewWriter(zipwriter)
 	defer archive.Close()
@@ -698,19 +736,25 @@ func writeBytesToAr(archive *ar.Writer, header ar.Header, name string, data []by
 	return nil
 }
 
-func writeFileToAr(archive *ar.Writer, header ar.Header, name string, file *os.File) error {
-	header.Name = name
+func writeFileToAr(archive *ar.Writer, header ar.Header, source string, dest string) error {
+	header.Name = source
+	file, err := os.Open(source)
+	if err != nil {
+		return err
+	}
 	info, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("Failed to stat %q to write ar header size: %s", file.Name(), err)
 	}
 
 	header.Size = info.Size()
+	log.Printf("Size: %d", header.Size)
+	log.Printf("Header: %+v", header)
 	if err := archive.WriteHeader(&header); err != nil {
-		return fmt.Errorf("Failed writing ar header for %q: %s", name, err)
+		return fmt.Errorf("Failed writing ar header for %q: %s", source, err)
 	}
 	if _, err := io.Copy(archive, file); err != nil {
-		return fmt.Errorf("Failed copying ar data for %q: %s", name, err)
+		return fmt.Errorf("Failed copying ar data for %q: %s", source, err)
 	}
 	return nil
 }
