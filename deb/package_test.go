@@ -31,6 +31,7 @@ func TestValidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to load fixture: %s", err)
 	}
+	p.Version = "0.1.0"
 
 	if err := p.Validate(); err != nil {
 		t.Fatal(err)
@@ -239,6 +240,7 @@ func TestBuild(t *testing.T) {
 		t.Fatalf("Failed to load fixture: %s", err)
 	}
 	p.AutoPath = path.Join("test-fixtures", "package1")
+	p.Version = "0.1.0"
 
 	err = p.Build("output")
 	if err != nil {

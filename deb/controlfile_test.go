@@ -13,6 +13,7 @@ func TestRenderControlFileBasic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	p.Version = "0.1.0"
 
 	expected := `Package: mkdeb
 Version: 0.1.0
@@ -41,6 +42,7 @@ func TestRenderControlFileWithDepends(t *testing.T) {
 	}
 
 	p.Conflicts = []string{}
+	p.Version = "0.1.0"
 
 	expected := `Package: mkdeb
 Version: 0.1.0
@@ -70,6 +72,7 @@ func TestRenderControlFileWithReplaces(t *testing.T) {
 	}
 
 	p.Replaces = []string{"debpkg"}
+	p.Version = "0.1.0"
 
 	expected := `Package: mkdeb
 Version: 0.1.0

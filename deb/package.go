@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -153,18 +152,18 @@ var (
 type PackageSpec struct {
 	// Binary Debian Control File - Required fields
 	Package      string
-	Version      string
+	Version      string `json:"-"`
 	Architecture string
 	Maintainer   string
 	Description  string
 
 	// Optional Fields
 	Depends   []string
-	Conflicts []string
-	Breaks    []string
-	Replaces  []string
-	Section   string // Defaults to "default"
-	Priority  string // Defaults to "extra"
+	Conflicts []string `json:",omitempty"`
+	Breaks    []string `json:",omitempty"`
+	Replaces  []string `json:",omitempty"`
+	Section   string   // Defaults to "default"
+	Priority  string   // Defaults to "extra"
 	Homepage  string
 
 	// Control Scripts
@@ -176,21 +175,26 @@ type PackageSpec struct {
 	// Build time options
 	AutoPath         string // Defaults to "deb-pkg"
 	Files            map[string]string
-	TempPath         string
-	PreserveSymlinks bool
-	UpgradeConfigs   bool
+	TempPath         string `json:",omitempty"`
+	PreserveSymlinks bool   `json:",omitempty"`
+	UpgradeConfigs   bool   `json:",omitempty"`
 
 	// Derived fields
-	InstalledSize int64 // Kilobytes, rounded up. Derived from file sizes.
+	InstalledSize int64 `json:"-"` // Kilobytes, rounded up. Derived from file sizes.
 }
 
 // DefaultPackageSpec includes default values for package specifications. This
 // simplifies configuration so a user need only specify required fields to build
 func DefaultPackageSpec() *PackageSpec {
 	return &PackageSpec{
-		Section:  "default",
-		Priority: "extra",
-		AutoPath: "deb-pkg",
+		Section:   "default",
+		Priority:  "extra",
+		AutoPath:  "deb-pkg",
+		Depends:   make([]string, 0),
+		Conflicts: make([]string, 0),
+		Breaks:    make([]string, 0),
+		Replaces:  make([]string, 0),
+		Files:     make(map[string]string, 0),
 	}
 }
 
@@ -361,8 +365,11 @@ func (p *PackageSpec) ListFiles() ([]string, error) {
 	files := []string{}
 
 	// First, grab all the files in AutoPath that are not control files
-	if p.AutoPath != "" && p.AutoPath != "-" {
+	if p.AutoPath != "" && p.AutoPath != "-" && FileExists(p.AutoPath) {
 		if err := filepath.Walk(p.AutoPath, func(filepath string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
 			// Skip directories
 			if info.IsDir() {
 				return nil
@@ -421,7 +428,7 @@ func (p *PackageSpec) ListControlFiles() ([]string, error) {
 		files = append(files, p.Preinst)
 	} else if p.AutoPath != "" && p.AutoPath != "-" {
 		filepath := path.Join(p.AutoPath, "preinst")
-		if fileExists(filepath) {
+		if FileExists(filepath) {
 			files = append(files, filepath)
 		}
 	}
@@ -430,7 +437,7 @@ func (p *PackageSpec) ListControlFiles() ([]string, error) {
 		files = append(files, p.Postinst)
 	} else if p.AutoPath != "" && p.AutoPath != "-" {
 		filepath := path.Join(p.AutoPath, "postinst")
-		if fileExists(filepath) {
+		if FileExists(filepath) {
 			files = append(files, filepath)
 		}
 	}
@@ -439,7 +446,7 @@ func (p *PackageSpec) ListControlFiles() ([]string, error) {
 		files = append(files, p.Prerm)
 	} else if p.AutoPath != "" && p.AutoPath != "-" {
 		filepath := path.Join(p.AutoPath, "prerm")
-		if fileExists(filepath) {
+		if FileExists(filepath) {
 			files = append(files, filepath)
 		}
 	}
@@ -448,7 +455,7 @@ func (p *PackageSpec) ListControlFiles() ([]string, error) {
 		files = append(files, p.Postrm)
 	} else if p.AutoPath != "" && p.AutoPath != "-" {
 		filepath := path.Join(p.AutoPath, "postrm")
-		if fileExists(filepath) {
+		if FileExists(filepath) {
 			files = append(files, filepath)
 		}
 	}
@@ -691,9 +698,15 @@ func (p *PackageSpec) NormalizeFilename(filename string) (string, error) {
 	return "", fmt.Errorf("Not sure what to do with %q because it is not specified in files and autopath is disabled", filename)
 }
 
-func fileExists(path string) bool {
+// FileExists returns true if the specified file/dir exists and we can stat it
+func FileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// SupportedArchitectures lists the architectures that are accepted by the validator
+func SupportedArchitectures() []string {
+	return supportedArchitectures
 }
 
 func hasString(items []string, search string) bool {
@@ -748,8 +761,6 @@ func writeFileToAr(archive *ar.Writer, header ar.Header, source string, dest str
 	}
 
 	header.Size = info.Size()
-	log.Printf("Size: %d", header.Size)
-	log.Printf("Header: %+v", header)
 	if err := archive.WriteHeader(&header); err != nil {
 		return fmt.Errorf("Failed writing ar header for %q: %s", source, err)
 	}
