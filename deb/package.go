@@ -30,7 +30,7 @@ import (
 	"time"
 
 	"github.com/klauspost/pgzip"
-	"github.com/larzconwell/ar"
+	"github.com/laher/argo/ar"
 )
 
 const (
@@ -293,10 +293,6 @@ func (p *PackageSpec) Build(target string) error {
 	// 1. Create binary package (tar.gz format)
 	// 2. Create control file package (tar.gz format)
 	// 3. Create .deb / package (ar archive format)
-
-	// debian-binary
-	// control.tar.gz
-	// data.tar.gz
 
 	err = os.MkdirAll(target, 0755)
 	if err != nil {

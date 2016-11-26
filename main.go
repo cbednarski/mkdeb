@@ -22,14 +22,14 @@ func main() {
 	}
 
 	switch args[0] {
-	case "init":
-		doInit()
-	case "build":
-		doBuild(checkConfig(args), *version)
 	case "archs":
-		listArchs()
+		showArchs()
+	case "build":
+		build(checkConfig(args), *version)
+	case "init":
+		initialize()
 	case "validate":
-		doValidate(checkConfig(args))
+		validate(checkConfig(args))
 	default:
 		showUsage()
 	}
@@ -55,11 +55,13 @@ func getTarget(filename string) (string, string) {
 	return dir, path
 }
 
-func listArchs() {
+func showArchs() {
 	fmt.Printf("mkdeb supported architectures: %s\n", strings.Join(deb.SupportedArchitectures(), ", "))
 }
 
-func doInit() {
+// initialize creates a new mkdeb config. This function is not called init()
+// because that has a special meaning in Go.
+func initialize() {
 	// Get abs path to PWD
 	workdir, err := os.Getwd()
 	handleError(err)
@@ -94,7 +96,7 @@ func doInit() {
 	handleError(err)
 }
 
-func doValidate(config string) {
+func validate(config string) {
 	// Change to config path
 	back, err := os.Getwd()
 	handleError(err)
@@ -109,7 +111,7 @@ func doValidate(config string) {
 	handleError(p.Validate())
 }
 
-func doBuild(config string, version string) {
+func build(config string, version string) {
 	// Change to config path
 	back, err := os.Getwd()
 	handleError(err)
@@ -128,7 +130,8 @@ func doBuild(config string, version string) {
 	handleError(p.Validate())
 
 	// Build
-	handleError(p.Build(p.Filename()))
+	handleError(p.Build(workdir))
+	fmt.Printf("Built package %s\n", p.Filename())
 }
 
 func handleError(err error) {
