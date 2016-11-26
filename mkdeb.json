@@ -1,0 +1,18 @@
+{
+  "Package": "mkdeb",
+  "Architecture": "amd64",
+  "Maintainer": "Your Name \u003cyou@example.com\u003e",
+  "Description": "mkdeb is an awsome project for...",
+  "Depends": [],
+  "Section": "default",
+  "Priority": "extra",
+  "Homepage": "https://www.example.com/project",
+  "Preinst": "",
+  "Postinst": "",
+  "Prerm": "",
+  "Postrm": "",
+  "AutoPath": "deb-pkg",
+  "Files": {
+    "mkdeb": "/usr/local/bin/mkdeb"
+  }
+}

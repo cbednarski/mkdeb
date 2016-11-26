@@ -243,8 +243,9 @@ func TestBuild(t *testing.T) {
 	p.Version = "0.1.0"
 
 	err = p.Build("output")
+	defer os.Remove(path.Join("output", p.Filename()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(path.Join("output", p.Filename()))
+
 }

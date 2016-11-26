@@ -15,7 +15,6 @@ package deb
 import (
 	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -30,8 +29,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/blakesmith/ar"
 	"github.com/klauspost/pgzip"
+	"github.com/larzconwell/ar"
 )
 
 const (
@@ -246,26 +245,31 @@ func (p *PackageSpec) Validate() error {
 		return fmt.Errorf("These required fields are missing: %s", strings.Join(missing, ", "))
 	}
 	if !hasString(supportedArchitectures, p.Architecture) {
-		return fmt.Errorf("Arch %q is not supported; expected one of %s", p.Architecture, strings.Join(supportedArchitectures, ", "))
+		return fmt.Errorf("Arch %q is not supported; expected one of %s",
+			p.Architecture, strings.Join(supportedArchitectures, ", "))
 	}
 	for _, dep := range p.Depends {
 		if !reDepends.MatchString(dep) {
-			return fmt.Errorf("Dependency %q is invalid; expected something like 'libc (= 5.1.2)' matching %q", dep, reDepends.String())
+			return fmt.Errorf("Dependency %q is invalid; expected something "+
+				"like 'libc (= 5.1.2)' matching %q", dep, reDepends.String())
 		}
 	}
 	for _, replace := range p.Replaces {
 		if !reReplacesEtc.MatchString(replace) {
-			return fmt.Errorf("Replacement %q is invalid; expected something like 'libc (<< 5.1.2)' matching %q", replace, reReplacesEtc.String())
+			return fmt.Errorf("Replacement %q is invalid; expected something "+
+				"like 'libc (<< 5.1.2)' matching %q", replace, reReplacesEtc.String())
 		}
 	}
 	for _, conflict := range p.Conflicts {
 		if !reReplacesEtc.MatchString(conflict) {
-			return fmt.Errorf("Conflict %q is invalid; expected something like 'libc (<< 5.1.2)' matching %q", conflict, reReplacesEtc.String())
+			return fmt.Errorf("Conflict %q is invalid; expected something "+
+				"like 'libc (<< 5.1.2)' matching %q", conflict, reReplacesEtc.String())
 		}
 	}
 	for _, breaks := range p.Breaks {
 		if !reReplacesEtc.MatchString(breaks) {
-			return fmt.Errorf("Break %q is invalid; expected something like 'libc (<< 5.1.2)' matching %q", breaks, reReplacesEtc.String())
+			return fmt.Errorf("Break %q is invalid; expected something like "+
+				"'libc (<< 5.1.2)' matching %q", breaks, reReplacesEtc.String())
 		}
 	}
 	return nil
@@ -305,7 +309,6 @@ func (p *PackageSpec) Build(target string) error {
 	}
 
 	archive := ar.NewWriter(file)
-	archive.WriteGlobalHeader()
 
 	archiveCreationTime := time.Now()
 
@@ -607,7 +610,7 @@ func (p *PackageSpec) CreateControlArchive(target string) error {
 	defer file.Close()
 
 	// Create a compressed archive stream
-	zipwriter := gzip.NewWriter(file)
+	zipwriter := pgzip.NewWriter(file)
 	defer zipwriter.Close()
 	archive := tar.NewWriter(zipwriter)
 	defer archive.Close()
@@ -695,7 +698,8 @@ func (p *PackageSpec) NormalizeFilename(filename string) (string, error) {
 		}
 		return path.Join(".", fpath), nil
 	}
-	return "", fmt.Errorf("Not sure what to do with %q because it is not specified in files and autopath is disabled", filename)
+	return "", fmt.Errorf("Not sure what to do with %q because it is not "+
+		"specified in files and autopath is disabled", filename)
 }
 
 // FileExists returns true if the specified file/dir exists and we can stat it
@@ -739,12 +743,13 @@ func writeBytesToAr(archive *ar.Writer, header ar.Header, name string, data []by
 	// This will cause data truncation on 32-bit go arch for files around 2gb.
 	// In that case we can't do this in memory anyway so you should use
 	// writeFileToAr() instead.
-	header.Size = int64(len(data))
+	length := int64(len(data))
+	header.Size = length
 	if err := archive.WriteHeader(&header); err != nil {
-		return fmt.Errorf("Failed writing header for %q: %s", name, err)
+		return fmt.Errorf("Failed writing ar header for %q: %s", name, err)
 	}
-	if _, err := archive.Write(data); err != nil {
-		return fmt.Errorf("Failed writing data for %q: %s", name, err)
+	if numbytes, err := archive.Write(data); err != nil {
+		return fmt.Errorf("Failed writing ar data for %q (had %d, wrote %d): %s", name, length, numbytes, err)
 	}
 	return nil
 }
@@ -764,8 +769,9 @@ func writeFileToAr(archive *ar.Writer, header ar.Header, source string, dest str
 	if err := archive.WriteHeader(&header); err != nil {
 		return fmt.Errorf("Failed writing ar header for %q: %s", source, err)
 	}
-	if _, err := io.Copy(archive, file); err != nil {
-		return fmt.Errorf("Failed copying ar data for %q: %s", source, err)
+	if numbytes, err := io.Copy(archive, file); err != nil {
+		return fmt.Errorf("Failed writing ar data for %q (had %d, wrote %d): %s",
+			source, info.Size(), numbytes, err)
 	}
 	return nil
 }

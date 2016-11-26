@@ -18,25 +18,25 @@ func main() {
 	args := flag.Args()
 
 	if len(args) == 0 {
-		Usage()
+		showUsage()
 	}
 
 	switch args[0] {
 	case "init":
-		Init()
+		doInit()
 	case "build":
-		Build(CheckConfig(args), *version)
+		doBuild(checkConfig(args), *version)
 	case "archs":
-		Archs()
+		listArchs()
 	case "validate":
-		Validate(CheckConfig(args))
+		doValidate(checkConfig(args))
 	default:
-		Usage()
+		showUsage()
 	}
 	os.Exit(0)
 }
 
-func CheckConfig(args []string) string {
+func checkConfig(args []string) string {
 	if len(args) < 2 {
 		fmt.Printf("Missing config file\n")
 		os.Exit(1)
@@ -44,8 +44,8 @@ func CheckConfig(args []string) string {
 	return args[len(args)-1]
 }
 
-// Target takes a relative filename and returns its absolute directory and filename.
-func Target(filename string) (string, string) {
+// getTarget takes a relative filename and returns its absolute directory and filename.
+func getTarget(filename string) (string, string) {
 	path, err := filepath.Abs(filename)
 	if err != nil {
 		fmt.Printf("Can't find %q", filename)
@@ -55,26 +55,26 @@ func Target(filename string) (string, string) {
 	return dir, path
 }
 
-func Archs() {
+func listArchs() {
 	fmt.Printf("mkdeb supported architectures: %s\n", strings.Join(deb.SupportedArchitectures(), ", "))
 }
 
-func Init() {
+func doInit() {
 	// Get abs path to PWD
 	workdir, err := os.Getwd()
-	HandleError(err)
+	handleError(err)
 	workdir, err = filepath.Abs(workdir)
-	HandleError(err)
+	handleError(err)
 
 	// Get config file name
 	target := path.Join(workdir, "mkdeb.json")
 	if deb.FileExists(target) {
-		HandleError(fmt.Errorf("mkdir.json already exists in this directory"))
+		handleError(fmt.Errorf("mkdir.json already exists in this directory"))
 	}
 
 	// Create config file
 	file, err := os.Create(target)
-	HandleError(err)
+	handleError(err)
 	defer file.Close()
 
 	// Create config struct
@@ -88,57 +88,57 @@ func Init() {
 	p.Files = map[string]string{projectName: "/usr/local/bin/" + projectName}
 
 	data, err := json.MarshalIndent(p, "", "  ")
-	HandleError(err)
+	handleError(err)
 
 	_, err = file.Write(data)
-	HandleError(err)
+	handleError(err)
 }
 
-func Validate(config string) {
+func doValidate(config string) {
 	// Change to config path
 	back, err := os.Getwd()
-	HandleError(err)
-	workdir, filename := Target(config)
+	handleError(err)
+	workdir, filename := getTarget(config)
 	err = os.Chdir(workdir)
-	HandleError(err)
+	handleError(err)
 	defer os.Chdir(back)
 
 	// Validate
 	p, err := deb.NewPackageSpecFromFile(filename)
-	HandleError(err)
-	HandleError(p.Validate())
+	handleError(err)
+	handleError(p.Validate())
 }
 
-func Build(config string, version string) {
+func doBuild(config string, version string) {
 	// Change to config path
 	back, err := os.Getwd()
-	HandleError(err)
-	workdir, filename := Target(config)
+	handleError(err)
+	workdir, filename := getTarget(config)
 	err = os.Chdir(workdir)
-	HandleError(err)
+	handleError(err)
 	defer os.Chdir(back)
 
 	p, err := deb.NewPackageSpecFromFile(filename)
-	HandleError(err)
+	handleError(err)
 
 	// Set version
 	p.Version = version
 
 	// Validate
-	HandleError(p.Validate())
+	handleError(p.Validate())
 
 	// Build
-	HandleError(p.Build(p.Filename()))
+	handleError(p.Build(p.Filename()))
 }
 
-func HandleError(err error) {
+func handleError(err error) {
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
 		os.Exit(1)
 	}
 }
 
-func Usage() {
+func showUsage() {
 	fmt.Print(usage)
 	os.Exit(1)
 }
