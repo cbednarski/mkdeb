@@ -1,5 +1,8 @@
 # mkdeb
 
+[![Build Status](https://travis-ci.org/cbednarski/mkdeb.svg?branch=master)](https://travis-ci.org/cbednarski/mkdeb)
+[![GoDoc](https://godoc.org/github.com/cbednarski/mkdeb/deb?status.svg)](https://godoc.org/github.com/cbednarski/mkdeb/deb)
+
 A Go CLI and library for building debian packages.
 
 To use the CLI:
