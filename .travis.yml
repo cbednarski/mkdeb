@@ -4,5 +4,9 @@ go:
     - 1.7.4
     - master
 
+script:
+    - make
+    - make testacc
+
 notifications:
     email: false
