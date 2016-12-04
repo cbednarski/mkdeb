@@ -3,8 +3,18 @@ package deb
 import (
 	"os"
 	"path"
+	"strings"
 	"testing"
 )
+
+func PackageSpecFixture(t *testing.T) *PackageSpec {
+	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %s", err)
+	}
+	p.AutoPath = path.Join("test-fixtures", "package1")
+	return p
+}
 
 func TestDefaultPackageSpec(t *testing.T) {
 	p := DefaultPackageSpec()
@@ -27,10 +37,7 @@ func TestFilename(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	if err != nil {
-		t.Fatalf("Failed to load fixture: %s", err)
-	}
+	p := PackageSpecFixture(t)
 	p.Version = "0.1.0"
 
 	if err := p.Validate(); err != nil {
@@ -38,7 +45,7 @@ func TestValidate(t *testing.T) {
 	}
 
 	p2 := &PackageSpec{}
-	err = p2.Validate()
+	err := p2.Validate()
 	expected := "These required fields are missing: package, version, architecture, maintainer, description"
 	if err.Error() != expected {
 		t.Fatalf("-- Expected --\n%s\n-- Found --\n%s\n", expected, err.Error())
@@ -46,11 +53,7 @@ func TestValidate(t *testing.T) {
 }
 
 func TestListControlFiles(t *testing.T) {
-	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	if err != nil {
-		t.Fatalf("Failed to load fixture: %s", err)
-	}
-	p.AutoPath = path.Join("test-fixtures", "package1")
+	p := PackageSpecFixture(t)
 
 	files, err := p.ListControlFiles()
 	if err != nil {
@@ -64,11 +67,7 @@ func TestListControlFiles(t *testing.T) {
 }
 
 func TestListFiles(t *testing.T) {
-	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	if err != nil {
-		t.Fatalf("Failed to load fixture: %s", err)
-	}
-	p.AutoPath = path.Join("test-fixtures", "package1")
+	p := PackageSpecFixture(t)
 
 	files, err := p.ListFiles()
 	if err != nil {
@@ -87,11 +86,7 @@ func TestListFiles(t *testing.T) {
 }
 
 func TestCalculateSize(t *testing.T) {
-	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	if err != nil {
-		t.Fatalf("Failed to load fixture: %s", err)
-	}
-	p.AutoPath = path.Join("test-fixtures", "package1")
+	p := PackageSpecFixture(t)
 
 	// find deb/test-fixtures/package1/ | xargs cat 2>/dev/null | wc -c
 	// divide by 1024 and round up remainder to go from bytes => kilobytes
@@ -106,12 +101,8 @@ func TestCalculateSize(t *testing.T) {
 	}
 }
 
-func TestNormalizeFilename(t *testing.T) {
-	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	if err != nil {
-		t.Fatalf("Failed to load fixture: %s", err)
-	}
-	p.AutoPath = path.Join("test-fixtures", "package1")
+func TestNormalizeFilenameAutoPath(t *testing.T) {
+	p := PackageSpecFixture(t)
 
 	configPath := path.Join("test-fixtures", "package1", "etc", "package1", "config")
 	configExpected := "etc/package1/config"
@@ -120,22 +111,38 @@ func TestNormalizeFilename(t *testing.T) {
 	} else if filename != configExpected {
 		t.Errorf("Expected %q got %q", configExpected, filename)
 	}
+}
 
-	hardcodedPath := "package1/binary"
-	hardcodedExpected := "usr/local/bin/package1"
+func TestNormalizeFilenameFileMap(t *testing.T) {
+	p := PackageSpecFixture(t)
+
+	hardcodedPath := "something/magic"
+	p.Files = map[string]string{
+		hardcodedPath: "/usr/local/bin/magic",
+	}
+
+	hardcodedExpected := "usr/local/bin/magic"
 	if filename, err := p.NormalizeFilename(hardcodedPath); err != nil {
-		t.Fatal()
+		t.Fatal(err)
 	} else if filename != hardcodedExpected {
 		t.Errorf("Expected %q got %q", hardcodedExpected, filename)
 	}
 }
 
-func TestListEtcFiles(t *testing.T) {
-	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	if err != nil {
-		t.Fatalf("Failed to load fixture: %s", err)
+func TestDuplicateDetector(t *testing.T) {
+	p := PackageSpecFixture(t)
+	p.Files = map[string]string{
+		"package/binary": "/usr/local/bin/package1",
 	}
-	p.AutoPath = path.Join("test-fixtures", "package1")
+
+	_, err := p.ListFiles()
+	if err == nil || !strings.Contains(err.Error(), "Duplicate") {
+		t.Fatalf("Expected duplicate file error; found %+v", err)
+	}
+}
+
+func TestListEtcFiles(t *testing.T) {
+	p := PackageSpecFixture(t)
 
 	files, err := p.ListEtcFiles()
 	if err != nil {
@@ -153,11 +160,7 @@ func TestListEtcFiles(t *testing.T) {
 }
 
 func TestUpgradeConfig(t *testing.T) {
-	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	if err != nil {
-		t.Fatalf("Failed to load fixture: %s", err)
-	}
-	p.AutoPath = path.Join("test-fixtures", "package1")
+	p := PackageSpecFixture(t)
 	p.UpgradeConfigs = true
 
 	data, err := p.ListEtcFiles()
@@ -176,18 +179,14 @@ func TestMD5SumFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := "e8f79d2b1995292911388a9d13a9528d"
+	expected := "77d87ca6af3e6710a1faf86aaed5b800"
 	if sum != expected {
 		t.Errorf("Expected %q got %q", expected, sum)
 	}
 }
 
 func TestCalculateChecksums(t *testing.T) {
-	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	if err != nil {
-		t.Fatalf("Failed to load fixture: %s", err)
-	}
-	p.AutoPath = path.Join("test-fixtures", "package1")
+	p := PackageSpecFixture(t)
 
 	expected := `adcc07f30ee844b18eab61f69f8c32c4  etc/package1/config
 0940b4d946e3e2b8bbfdf5cfcf722518  usr/local/bin/package1
@@ -205,11 +204,7 @@ func TestCalculateChecksums(t *testing.T) {
 }
 
 func TestCreateDataArchive(t *testing.T) {
-	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	if err != nil {
-		t.Fatalf("Failed to load fixture: %s", err)
-	}
-	p.AutoPath = path.Join("test-fixtures", "package1")
+	p := PackageSpecFixture(t)
 	p.TempPath = "test-fixtures"
 
 	filename := "test-data.tar.gz"
@@ -220,11 +215,7 @@ func TestCreateDataArchive(t *testing.T) {
 }
 
 func TestCreateControlArchive(t *testing.T) {
-	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	if err != nil {
-		t.Fatalf("Failed to load fixture: %s", err)
-	}
-	p.AutoPath = path.Join("test-fixtures", "package1")
+	p := PackageSpecFixture(t)
 	p.TempPath = "test-fixtures"
 
 	filename := "test-control.tar.gz"
@@ -235,14 +226,10 @@ func TestCreateControlArchive(t *testing.T) {
 }
 
 func TestBuild(t *testing.T) {
-	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
-	if err != nil {
-		t.Fatalf("Failed to load fixture: %s", err)
-	}
-	p.AutoPath = path.Join("test-fixtures", "package1")
+	p := PackageSpecFixture(t)
 	p.Version = "0.1.0"
 
-	err = p.Build("output")
+	err := p.Build("output")
 	defer os.Remove(path.Join("output", p.Filename()))
 	if err != nil {
 		t.Fatal(err)

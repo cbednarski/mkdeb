@@ -357,11 +357,18 @@ func (p *PackageSpec) RenderControlFile() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// ListFiles returns a list of files that will be included in the archive. This
-// is a list of Path => Name pairs representing the file on disk and where we
-// are going to store it in the archive.
+// ListFiles returns a list of files that will be included in the archive,
+// identified by their source paths.
+//
+// These files will later be written into the archive using a path derived via
+// NormalizeFilename().
 func (p *PackageSpec) ListFiles() ([]string, error) {
+	// Files is a list of source files
 	files := []string{}
+
+	// Targets is a list of normalized paths that will be written to the archive
+	// This is used to check for duplicates between AutoPath and the Files map.
+	targets := map[string]struct{}{}
 
 	// First, grab all the files in AutoPath that are not control files
 	if p.AutoPath != "" && p.AutoPath != "-" && FileExists(p.AutoPath) {
@@ -378,11 +385,35 @@ func (p *PackageSpec) ListFiles() ([]string, error) {
 				return nil
 			}
 			files = append(files, filepath)
+			target, err := p.NormalizeFilename(filepath)
+			if err != nil {
+				return err
+			}
+			if _, ok := targets[target]; ok {
+				// This is an odd edge case; it should probably never happen
+				return fmt.Errorf("Duplicate file detected from AutoPath: %s", filepath)
+			}
+			targets[target] = struct{}{}
 			return nil
 		}); err != nil {
 			return nil, err
 		}
 	}
+
+	for src := range p.Files {
+		target, err := p.NormalizeFilename(src)
+		if err != nil {
+			return files, err
+		}
+		if _, ok := targets[target]; ok {
+			// This indicates a conflict between Files and what we discovered
+			// automatically via AuthPath (configuration error)
+			return files, fmt.Errorf("Duplicate file detected from Files: %s", src)
+		}
+		targets[target] = struct{}{}
+		files = append(files, src)
+	}
+
 	return files, nil
 }
 

@@ -11,7 +11,7 @@
   "Postinst": "",
   "Prerm": "",
   "Postrm": "",
-  "AutoPath": "deb-pkg",
+  "AutoPath": "",
   "Files": {
     "mkdeb": "/usr/local/bin/mkdeb"
   }
