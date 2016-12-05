@@ -40,12 +40,12 @@ func TestValidate(t *testing.T) {
 	p := PackageSpecFixture(t)
 	p.Version = "0.1.0"
 
-	if err := p.Validate(); err != nil {
+	if err := p.Validate(true); err != nil {
 		t.Fatal(err)
 	}
 
 	p2 := &PackageSpec{}
-	err := p2.Validate()
+	err := p2.Validate(true)
 	expected := "These required fields are missing: package, version, architecture, maintainer, description"
 	if err.Error() != expected {
 		t.Fatalf("-- Expected --\n%s\n-- Found --\n%s\n", expected, err.Error())
