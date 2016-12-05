@@ -1,6 +1,9 @@
+sudo: required
+
 language: go
 
-sudo: required
+services:
+  - docker
 
 go:
   - 1.7.4
@@ -12,6 +15,3 @@ script:
 
 notifications:
   email: false
-
-services:
-  - docker
