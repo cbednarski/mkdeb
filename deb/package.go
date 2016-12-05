@@ -223,13 +223,13 @@ func NewPackageSpecFromFile(filename string) (*PackageSpec, error) {
 // Validate checks the syntax of various text fields in PackageSpec to verify
 // that they conform to the debian package specification. Errors from this call
 // should be passed to the user so they can fix errors in their config file.
-func (p *PackageSpec) Validate() error {
+func (p *PackageSpec) Validate(buildTime bool) error {
 	// Verify required fields are specified
 	missing := []string{}
 	if p.Package == "" {
 		missing = append(missing, "package")
 	}
-	if p.Version == "" {
+	if buildTime && p.Version == "" {
 		missing = append(missing, "version")
 	}
 	if p.Architecture == "" {

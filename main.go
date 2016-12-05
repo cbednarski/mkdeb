@@ -108,7 +108,7 @@ func validate(config string) {
 	// Validate
 	p, err := deb.NewPackageSpecFromFile(filename)
 	handleError(err)
-	handleError(p.Validate())
+	handleError(p.Validate(false))
 }
 
 func build(config string, version string) {
