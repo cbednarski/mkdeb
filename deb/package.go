@@ -150,33 +150,33 @@ var (
 // https://www.debian.org/doc/manuals/debian-faq/ch-pkg_basics.en.html
 type PackageSpec struct {
 	// Binary Debian Control File - Required fields
-	Package      string
+	Package      string `json:"package"`
 	Version      string `json:"-"`
-	Architecture string
-	Maintainer   string
-	Description  string
+	Architecture string `json:"architecture"`
+	Maintainer   string `json:"maintainer"`
+	Description  string `json:"description"`
 
 	// Optional Fields
-	Depends   []string
-	Conflicts []string `json:",omitempty"`
-	Breaks    []string `json:",omitempty"`
-	Replaces  []string `json:",omitempty"`
-	Section   string   // Defaults to "default"
-	Priority  string   // Defaults to "extra"
-	Homepage  string
+	Depends   []string `json:"depends"`
+	Conflicts []string `json:"conflicts,omitempty"`
+	Breaks    []string `json:"breaks,omitempty"`
+	Replaces  []string `json:"replaces,omitempty"`
+	Section   string   `json:"section"`  // Defaults to "default"
+	Priority  string   `json:"priority"` // Defaults to "extra"
+	Homepage  string   `json:"homepage"`
 
 	// Control Scripts
-	Preinst  string
-	Postinst string
-	Prerm    string
-	Postrm   string
+	Preinst  string `json:"preinst"`
+	Postinst string `json:"postinst"`
+	Prerm    string `json:"prerm"`
+	Postrm   string `json:"postrm"`
 
 	// Build time options
-	AutoPath         string // Defaults to "deb-pkg"
-	Files            map[string]string
-	TempPath         string `json:",omitempty"`
-	PreserveSymlinks bool   `json:",omitempty"`
-	UpgradeConfigs   bool   `json:",omitempty"`
+	AutoPath         string            `json:"autoPath"` // Defaults to "deb-pkg"
+	Files            map[string]string `json:"files"`
+	TempPath         string            `json:"tempPath,omitempty"`
+	PreserveSymlinks bool              `json:"preserveSymlinks,omitempty"`
+	UpgradeConfigs   bool              `json:"upgradeConfigs,omitempty"`
 
 	// Derived fields
 	InstalledSize int64 `json:"-"` // Kilobytes, rounded up. Derived from file sizes.
