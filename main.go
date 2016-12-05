@@ -127,7 +127,7 @@ func build(config string, version string) {
 	p.Version = version
 
 	// Validate
-	handleError(p.Validate())
+	handleError(p.Validate(true))
 
 	// Build
 	handleError(p.Build(workdir))

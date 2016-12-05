@@ -286,7 +286,7 @@ func (p *PackageSpec) Filename() string {
 //
 //	path.Join(target, PackageSpec.Filename())
 func (p *PackageSpec) Build(target string) error {
-	err := p.Validate()
+	err := p.Validate(true)
 	if err != nil {
 		return err
 	}
