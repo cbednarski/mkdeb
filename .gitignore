@@ -4,3 +4,6 @@
 
 mkdeb
 mkdeb-*-amd64.deb
+
+.idea
+*.iml
