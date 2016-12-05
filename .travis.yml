@@ -1,12 +1,17 @@
 language: go
 
+sudo: required
+
 go:
-    - 1.7.4
-    - master
+  - 1.7.4
+  - master
 
 script:
-    - make
-    - make testacc
+  - make
+  - make testacc
 
 notifications:
-    email: false
+  email: false
+
+services:
+  - docker
