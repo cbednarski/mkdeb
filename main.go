@@ -13,23 +13,27 @@ import (
 )
 
 func main() {
-	version := flag.String("version", "1.0", "Package version")
-	flag.Parse()
-	args := flag.Args()
+	args := os.Args
 
-	if len(args) == 0 {
+	if len(args) < 2 {
 		showUsage()
 	}
 
-	switch args[0] {
+	switch args[1] {
 	case "archs":
 		showArchs()
 	case "build":
-		build(checkConfig(args), *version)
+		buildCommand := flag.NewFlagSet("build", flag.ExitOnError)
+		version := buildCommand.String("version", "1.0", "Package version")
+		target := buildCommand.String("target", "", "Target folder with generated filename")
+		buildCommand.Parse(args[2:])
+		build(checkConfig(buildCommand.Args()), *version, *target)
 	case "init":
 		initialize()
 	case "validate":
-		validate(checkConfig(args))
+		commandArgs := flag.Args()
+
+		validate(checkConfig(commandArgs))
 	default:
 		showUsage()
 	}
@@ -37,15 +41,22 @@ func main() {
 }
 
 func checkConfig(args []string) string {
-	if len(args) < 2 {
+	if len(args) < 1 {
 		fmt.Printf("Missing config file\n")
 		os.Exit(1)
 	}
-	return args[len(args)-1]
+	if len(args) > 1 {
+		fmt.Printf("Too many arguments\n")
+		os.Exit(1)
+	}
+	return args[0]
 }
 
-// getTarget takes a relative filename and returns its absolute directory and filename.
-func getTarget(filename string) (string, string) {
+// getAbsPaths takes a relative path to a file and returns both the containing
+// directory and the absolute path to the file.
+//
+// Example: cat -> /bin /bin/cat
+func getAbsPaths(filename string) (string, string) {
 	path, err := filepath.Abs(filename)
 	if err != nil {
 		fmt.Printf("Can't find %q", filename)
@@ -100,7 +111,7 @@ func validate(config string) {
 	// Change to config path
 	back, err := os.Getwd()
 	handleError(err)
-	workdir, filename := getTarget(config)
+	workdir, filename := getAbsPaths(config)
 	err = os.Chdir(workdir)
 	handleError(err)
 	defer os.Chdir(back)
@@ -111,27 +122,43 @@ func validate(config string) {
 	handleError(p.Validate(false))
 }
 
-func build(config string, version string) {
+func build(config, version, target string) {
 	// Change to config path
 	back, err := os.Getwd()
 	handleError(err)
-	workdir, filename := getTarget(config)
+
+	// Get the working directory to cd into and the absolute path to the file
+	workdir, abspath := getAbsPaths(config)
 	err = os.Chdir(workdir)
 	handleError(err)
 	defer os.Chdir(back)
 
-	p, err := deb.NewPackageSpecFromFile(filename)
+	p, err := deb.NewPackageSpecFromFile(abspath)
 	handleError(err)
 
 	// Set version
 	p.Version = version
 
+	// Set target filename
+	if target == "" {
+		target = workdir
+	} else {
+		if !isDir(target) {
+			handleError(fmt.Errorf("%q is not a directory", target))
+		}
+	}
+
 	// Validate
 	handleError(p.Validate(true))
 
 	// Build
-	handleError(p.Build(workdir))
-	fmt.Printf("Built package %s\n", p.Filename())
+	handleError(p.Build(target))
+	fmt.Printf("Built package %s\n", path.Join(target, p.Filename()))
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func handleError(err error) {
@@ -161,31 +188,38 @@ COMMANDS
 
 BUILD COMMAND
 
-  mkdeb build --version=1.2.0 config.json
+  mkdeb build -version=1.2.0 config.json
+
+  Options:
+
+    -version (required) Package version
+
+    -target (optional) output artifact to this path
+
+    -targetDir (optional) output artifact to this folder, use generated filename
+
+  By default the build artifact
 
   The build command will change to the directory where the config file is
   located, so paths should always be specified relative to the config file.
-
-  All options except version should be specified in your config file since
-  version typically changes on each build.
 
 PACKAGING CONFIGURATION
 
   Required Fields
 
-  - Package: The name of your package
-  - Version: Must adhere to debian version syntax.
-  - Architecture: CPU arch for your binaries, or "all"
-  - Maintainer: Your Name <email@example.com>
-  - Description: Brief explanation of your package
+  - package: The name of your package
+  - version: Must adhere to debian version syntax.
+  - architecture: CPU arch for your binaries, or "all"
+  - maintainer: Your Name <email@example.com>
+  - description: Brief explanation of your package
 
   Optional Fields
 
-  - Depends: Other packages you depend on. E.g: "python" or "curl (>= 7.0.0)"
-  - Conflicts: Packages your package are not compatible with
-  - Breaks: Packages your package breaks
-  - Replaces: Packages your package replaces
-  - Homepage: URL to your project homepage or source repository, if you have one
+  - depends: Other packages you depend on. E.g: "python" or "curl (>= 7.0.0)"
+  - conflicts: Packages your package are not compatible with
+  - breaks: Packages your package breaks
+  - replaces: Packages your package replaces
+  - homepage: URL to your project homepage or source repository, if you have one
 
   For more details on how to specify various config options, refer to the
   debian package specification:
@@ -195,16 +229,16 @@ PACKAGING CONFIGURATION
 
 PACKAGING LAYOUT
 
-  AutoPath
+  autoPath
 
-  mkdeb will automatically include any files deb-pkg, the default AutoPath
+  mkdeb will automatically include any files deb-pkg, the default autoPath
   directory. For example, the following files will be automatically included and
   installed to their corresponding paths:
 
     deb-pkg/etc/mysqld/my.conf  -> /etc/mysqld/my.conf
     deb-pkg/usr/bin/mysqld      -> /usr/bin/mysqld
 
-  You can override this behavior by setting AutoPath to - (dash character) and /
+  You can override this behavior by setting autoPath to - (dash character) and /
   or by using the Files map to create a custom source -> dest mapping.
 
   Control Scripts
@@ -226,21 +260,21 @@ BUILD OPTIONS
 
   The following options change how mkdeb runs when building packages.
 
-  - TempPath: Controls where intermediate files are written during the build.
+  - tempPath: Controls where intermediate files are written during the build.
     This defaults to the system temp directory.
 
-  - UpgradeConfigs: Indicates whether apt should replace files under /etc when
+  - upgradeConfigs: Indicates whether apt should replace files under /etc when
     installing a new package version. By default these files are not upgraded.
 
-  - PreserveSymlinks: By default contents of symlink targets are copied. This
+  - preserveSymlinks: By default contents of symlink targets are copied. This
     option writes symlinks to the archive instead.
 
 LICENSE
 
   Copyright 2016 Chris Bednarski <banzaimonkey@gmail.com>, and others
 
-  Portions of mkdeb are licensed under the MIT and Go Licenses. Please refer to
-  the project source for full license text and details.
+  Portions of mkdeb are licensed under the MIT, BSD and Go Licenses. Please
+  refer to the project source for full license text and details.
 
   https://github.com/cbednarski/mkdeb
 `
