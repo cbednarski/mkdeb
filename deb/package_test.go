@@ -55,14 +55,14 @@ func TestValidate(t *testing.T) {
 func TestListControlFiles(t *testing.T) {
 	p := PackageSpecFixture(t)
 
-	files, err := p.ListControlFiles()
-	if err != nil {
-		t.Fatalf("Failed to list control files: %s", err)
-	}
+	files := p.MapControlFiles()
 
-	search := "test-fixtures/package1/preinst"
-	if !hasString(files, search) {
+	search := "preinst"
+	expected := "test-fixtures/package1/preinst"
+	if found, ok := files[search]; !ok {
 		t.Errorf("Unable to find %q in %+v", search, files)
+	} else if found != expected {
+		t.Fatalf("Expected %q, found %q", expected, found)
 	}
 }
 

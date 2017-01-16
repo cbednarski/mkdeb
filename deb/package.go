@@ -250,26 +250,22 @@ func (p *PackageSpec) Validate(buildTime bool) error {
 	}
 	for _, dep := range p.Depends {
 		if !reDepends.MatchString(dep) {
-			return fmt.Errorf("Dependency %q is invalid; expected something "+
-				"like 'libc (= 5.1.2)' matching %q", dep, reDepends.String())
+			return fmt.Errorf("Dependency %q is invalid; expected something like 'libc (= 5.1.2)' matching %q", dep, reDepends.String())
 		}
 	}
 	for _, replace := range p.Replaces {
 		if !reReplacesEtc.MatchString(replace) {
-			return fmt.Errorf("Replacement %q is invalid; expected something "+
-				"like 'libc (<< 5.1.2)' matching %q", replace, reReplacesEtc.String())
+			return fmt.Errorf("Replacement %q is invalid; expected something like 'libc (<< 5.1.2)' matching %q", replace, reReplacesEtc.String())
 		}
 	}
 	for _, conflict := range p.Conflicts {
 		if !reReplacesEtc.MatchString(conflict) {
-			return fmt.Errorf("Conflict %q is invalid; expected something "+
-				"like 'libc (<< 5.1.2)' matching %q", conflict, reReplacesEtc.String())
+			return fmt.Errorf("Conflict %q is invalid; expected something like 'libc (<< 5.1.2)' matching %q", conflict, reReplacesEtc.String())
 		}
 	}
 	for _, breaks := range p.Breaks {
 		if !reReplacesEtc.MatchString(breaks) {
-			return fmt.Errorf("Break %q is invalid; expected something like "+
-				"'libc (<< 5.1.2)' matching %q", breaks, reReplacesEtc.String())
+			return fmt.Errorf("Break %q is invalid; expected something like 'libc (<< 5.1.2)' matching %q", breaks, reReplacesEtc.String())
 		}
 	}
 	return nil
@@ -447,50 +443,50 @@ func (p *PackageSpec) ListEtcFiles() ([]string, error) {
 	return etcFiles, nil
 }
 
-// ListControlFiles returns a list of optional control scripts including
+// MapControlFiles returns a list of optional control scripts including
 // pre/post/inst/rm that are used in this package.
-func (p *PackageSpec) ListControlFiles() ([]string, error) {
-	files := []string{}
+func (p *PackageSpec) MapControlFiles() (map[string]string) {
+	files := map[string]string{}
 
 	// This is ugly but means we don't have to use reflection
 
 	if p.Preinst != "" {
-		files = append(files, p.Preinst)
+		files["preinst"] = p.Preinst
 	} else if p.AutoPath != "" && p.AutoPath != "-" {
-		filepath := path.Join(p.AutoPath, "preinst")
-		if FileExists(filepath) {
-			files = append(files, filepath)
+		filename := path.Join(p.AutoPath, "preinst")
+		if FileExists(filename) {
+			files["preinst"] = filename
 		}
 	}
 
 	if p.Postinst != "" {
-		files = append(files, p.Postinst)
+		files["postinst"] = p.Postinst
 	} else if p.AutoPath != "" && p.AutoPath != "-" {
-		filepath := path.Join(p.AutoPath, "postinst")
-		if FileExists(filepath) {
-			files = append(files, filepath)
+		filename := path.Join(p.AutoPath, "postinst")
+		if FileExists(filename) {
+			files["postinst"] = filename
 		}
 	}
 
 	if p.Prerm != "" {
-		files = append(files, p.Prerm)
+		files["prerm"] = p.Prerm
 	} else if p.AutoPath != "" && p.AutoPath != "-" {
-		filepath := path.Join(p.AutoPath, "prerm")
-		if FileExists(filepath) {
-			files = append(files, filepath)
+		filename := path.Join(p.AutoPath, "prerm")
+		if FileExists(filename) {
+			files["prerm"] = filename
 		}
 	}
 
 	if p.Postrm != "" {
-		files = append(files, p.Postrm)
+		files["postrm"] = p.Postrm
 	} else if p.AutoPath != "" && p.AutoPath != "-" {
-		filepath := path.Join(p.AutoPath, "postrm")
-		if FileExists(filepath) {
-			files = append(files, filepath)
+		filename := path.Join(p.AutoPath, "postrm")
+		if FileExists(filename) {
+			files["postrm"] = filename
 		}
 	}
 
-	return files, nil
+	return files
 }
 
 // CalculateSize returns the size in Kilobytes of all files in the package.
@@ -502,13 +498,14 @@ func (p *PackageSpec) CalculateSize() (int64, error) {
 		return 0, err
 	}
 
-	controlFiles, err := p.ListControlFiles()
-	if err != nil {
-		return 0, err
+	controlFiles := p.MapControlFiles()
+	controlFilesList := []string{}
+	for _, item := range controlFiles {
+		controlFilesList = append(controlFilesList, item)
 	}
 
 	// Merge list of control files and data files so we can get the whole size
-	files = append(files, controlFiles...)
+	files = append(files, controlFilesList...)
 
 	for _, file := range files {
 		var fileinfo os.FileInfo
@@ -557,7 +554,7 @@ func (p *PackageSpec) CalculateChecksums() ([]byte, error) {
 		if err != nil {
 			return data, err
 		}
-		data = append(data, []byte(sum+"  "+normFile+"\n")...)
+		data = append(data, []byte(sum + "  " + normFile + "\n")...)
 	}
 
 	return data, nil
@@ -686,11 +683,11 @@ func (p *PackageSpec) CreateControlArchive(target string) error {
 	archive.Write(controlData)
 
 	// Add control scripts
-	scripts, err := p.ListControlFiles()
+	scripts := p.MapControlFiles()
 	if err != nil {
 		return err
 	}
-	for _, script := range scripts {
+	for target, script := range scripts {
 		scriptData, err := ioutil.ReadFile(script)
 		if err != nil {
 			return fmt.Errorf("Failed reading script %q: %s", script, err)
@@ -698,7 +695,7 @@ func (p *PackageSpec) CreateControlArchive(target string) error {
 
 		scriptHeader := header
 		scriptHeader.Mode = 755
-		scriptHeader.Name, err = p.NormalizeFilename(script)
+		scriptHeader.Name = target
 		if err != nil {
 			return err
 		}
@@ -725,8 +722,7 @@ func (p *PackageSpec) NormalizeFilename(filename string) (string, error) {
 		}
 		return path.Join(".", fpath), nil
 	}
-	return "", fmt.Errorf("Not sure what to do with %q because it is not "+
-		"specified in files and autopath is disabled", filename)
+	return "", fmt.Errorf("Not sure what to do with %q because it is not specified in files and autopath is disabled", filename)
 }
 
 // FileExists returns true if the specified file/dir exists and we can stat it
