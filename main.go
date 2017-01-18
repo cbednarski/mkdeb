@@ -196,8 +196,6 @@ BUILD COMMAND
 
     -target (optional) output artifact to this path
 
-    -targetDir (optional) output artifact to this folder, use generated filename
-
   By default the build artifact
 
   The build command will change to the directory where the config file is
