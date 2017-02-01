@@ -308,7 +308,7 @@ func (p *PackageSpec) Build(target string) error {
 		ModTime: archiveCreationTime,
 		Uid:     0,
 		Gid:     0,
-		Mode:    644,
+		Mode:    0600,
 	}
 
 	// Write the debian binary version (hard-coded to 2.0)
@@ -605,8 +605,8 @@ func (p *PackageSpec) CreateDataArchive(target string) error {
 		fileHeader := header
 		fileHeader.Name = target
 		fileHeader.Size = info.Size()
-		fileHeader.Mode = 755
-		// fileHeader.Mode = int64(info.Mode().Perm())
+		//fileHeader.Mode = 0755
+		fileHeader.Mode = int64(info.Mode().Perm())
 		fileHeader.ModTime = info.ModTime()
 		archive.WriteHeader(&fileHeader)
 		_, err = io.Copy(archive, dataFile)
@@ -640,7 +640,7 @@ func (p *PackageSpec) CreateControlArchive(target string) error {
 	defer archive.Close()
 
 	header := tar.Header{
-		Mode:    644,
+		Mode:    0600,
 		Uid:     0,
 		Gid:     0,
 		ModTime: time.Now(),
@@ -694,7 +694,7 @@ func (p *PackageSpec) CreateControlArchive(target string) error {
 		}
 
 		scriptHeader := header
-		scriptHeader.Mode = 755
+		scriptHeader.Mode = 0755
 		scriptHeader.Name = target
 		if err != nil {
 			return err
