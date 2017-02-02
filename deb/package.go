@@ -31,6 +31,7 @@ import (
 
 	"github.com/klauspost/pgzip"
 	"github.com/laher/argo/ar"
+	"log"
 )
 
 const (
@@ -605,7 +606,6 @@ func (p *PackageSpec) CreateDataArchive(target string) error {
 		fileHeader := header
 		fileHeader.Name = target
 		fileHeader.Size = info.Size()
-		//fileHeader.Mode = 0755
 		fileHeader.Mode = int64(info.Mode().Perm())
 		fileHeader.ModTime = info.ModTime()
 		archive.WriteHeader(&fileHeader)
