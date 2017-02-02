@@ -31,11 +31,6 @@ import (
 
 	"github.com/klauspost/pgzip"
 	"github.com/laher/argo/ar"
-	"log"
-)
-
-const (
-	debianBinary = "2.0\n"
 )
 
 var (
@@ -322,7 +317,7 @@ func (p *PackageSpec) Build(target string) error {
 	}
 	defer os.Remove("control.tar.gz")
 	// Copy the control file archive into ar (.deb)
-	if err := writeFileToAr(archive, baseHeader, "control.tar.gz", "control.tar.gz"); err != nil {
+	if err := writeFileToAr(archive, baseHeader, "control.tar.gz"); err != nil {
 		return err
 	}
 
@@ -331,7 +326,7 @@ func (p *PackageSpec) Build(target string) error {
 	}
 	defer os.Remove("data.tar.gz")
 	// Copy the data archive into the ar (.deb)
-	if err := writeFileToAr(archive, baseHeader, "data.tar.gz", "data.tar.gz"); err != nil {
+	if err := writeFileToAr(archive, baseHeader, "data.tar.gz"); err != nil {
 		return err
 	}
 
@@ -369,9 +364,9 @@ func (p *PackageSpec) ListFiles() ([]string, error) {
 
 	// First, grab all the files in AutoPath that are not control files
 	if p.AutoPath != "" && p.AutoPath != "-" && FileExists(p.AutoPath) {
-		if err := filepath.Walk(p.AutoPath, func(filepath string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
+		if err := filepath.Walk(p.AutoPath, func(filepath string, info os.FileInfo, err2 error) error {
+			if err2 != nil {
+				return err2
 			}
 			// Skip directories
 			if info.IsDir() {
@@ -591,15 +586,16 @@ func (p *PackageSpec) CreateDataArchive(target string) error {
 		if err != nil {
 			return err
 		}
-		defer dataFile.Close()
 
 		info, err := dataFile.Stat()
 		if err != nil {
+			dataFile.Close()
 			return err
 		}
 
 		target, err := p.NormalizeFilename(filename)
 		if err != nil {
+			dataFile.Close()
 			return err
 		}
 
@@ -611,8 +607,10 @@ func (p *PackageSpec) CreateDataArchive(target string) error {
 		archive.WriteHeader(&fileHeader)
 		_, err = io.Copy(archive, dataFile)
 		if err != nil {
+			dataFile.Close()
 			return err
 		}
+		dataFile.Close()
 	}
 	return nil
 }
@@ -777,7 +775,7 @@ func writeBytesToAr(archive *ar.Writer, header ar.Header, name string, data []by
 	return nil
 }
 
-func writeFileToAr(archive *ar.Writer, header ar.Header, source string, dest string) error {
+func writeFileToAr(archive *ar.Writer, header ar.Header, source string) error {
 	header.Name = source
 	file, err := os.Open(source)
 	if err != nil {
