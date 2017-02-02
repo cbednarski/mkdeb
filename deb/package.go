@@ -38,8 +38,8 @@ const (
 )
 
 var (
-	reDepends     = regexp.MustCompile(`^[a-zA-Z0-9_-]+( \((>|>=|<|<=|=) ([0-9][0-9a-zA-Z.-]*?)\))?$`)
-	reReplacesEtc = regexp.MustCompile(`^[a-zA-Z0-9_-]+( \(<< ([0-9][0-9a-zA-Z.-]*?)\))?$`)
+	reDepends     = regexp.MustCompile(`^[a-zA-Z0-9.+_-]+( \((>|>=|<|<=|=) ([0-9][0-9a-zA-Z.-]*?)\))?$`)
+	reReplacesEtc = regexp.MustCompile(`^[a-zA-Z0-9.+_-]+( \(<< ([0-9][0-9a-zA-Z.-]*?)\))?$`)
 
 	controlFiles = []string{
 		"preinst",
