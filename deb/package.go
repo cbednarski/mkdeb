@@ -638,7 +638,7 @@ func (p *PackageSpec) CreateControlArchive(target string) error {
 	defer archive.Close()
 
 	header := tar.Header{
-		Mode:    0600,
+		Mode:    0644,
 		Uid:     0,
 		Gid:     0,
 		ModTime: time.Now(),
