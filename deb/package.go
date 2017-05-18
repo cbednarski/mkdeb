@@ -354,7 +354,7 @@ func (p *PackageSpec) RenderControlFile() ([]byte, error) {
 //
 // These files will later be written into the archive using a path derived via
 // NormalizeFilename().
-func (p *PackageSpec) ListFiles() ([]string, error) {
+func (p *PackageSpec) ListFiles(includeDirs bool) ([]string, error) {
 	// Files is a list of source files
 	files := []string{}
 
@@ -368,10 +368,12 @@ func (p *PackageSpec) ListFiles() ([]string, error) {
 			if err2 != nil {
 				return err2
 			}
-			// Skip directories
-			if info.IsDir() {
+
+			// Skip directories if instructed
+			if !includeDirs && info.IsDir() {
 				return nil
 			}
+
 			// Skip control files
 			if hasString(controlFiles, path.Base(filepath)) {
 				return nil
@@ -422,7 +424,7 @@ func (p *PackageSpec) ListEtcFiles() ([]string, error) {
 		return etcFiles, nil
 	}
 
-	files, err := p.ListFiles()
+	files, err := p.ListFiles(false)
 	if err != nil {
 		return nil, err
 	}
@@ -441,7 +443,7 @@ func (p *PackageSpec) ListEtcFiles() ([]string, error) {
 
 // MapControlFiles returns a list of optional control scripts including
 // pre/post/inst/rm that are used in this package.
-func (p *PackageSpec) MapControlFiles() (map[string]string) {
+func (p *PackageSpec) MapControlFiles() map[string]string {
 	files := map[string]string{}
 
 	// This is ugly but means we don't have to use reflection
@@ -489,7 +491,7 @@ func (p *PackageSpec) MapControlFiles() (map[string]string) {
 func (p *PackageSpec) CalculateSize() (int64, error) {
 	size := int64(0)
 
-	files, err := p.ListFiles()
+	files, err := p.ListFiles(false)
 	if err != nil {
 		return 0, err
 	}
@@ -536,7 +538,7 @@ func (p *PackageSpec) CalculateSize() (int64, error) {
 // All files returned by ListFiles() are included
 func (p *PackageSpec) CalculateChecksums() ([]byte, error) {
 	data := []byte{}
-	files, err := p.ListFiles()
+	files, err := p.ListFiles(false)
 	if err != nil {
 		return data, err
 	}
@@ -550,7 +552,7 @@ func (p *PackageSpec) CalculateChecksums() ([]byte, error) {
 		if err != nil {
 			return data, err
 		}
-		data = append(data, []byte(sum + "  " + normFile + "\n")...)
+		data = append(data, []byte(sum+"  "+normFile+"\n")...)
 	}
 
 	return data, nil
@@ -570,48 +572,50 @@ func (p *PackageSpec) CreateDataArchive(target string) error {
 	archive := tar.NewWriter(zipwriter)
 	defer archive.Close()
 
-	header := tar.Header{
-		Uid:   0,
-		Gid:   0,
-		Uname: "root",
-		Gname: "root",
-	}
-
-	files, err := p.ListFiles()
+	files, err := p.ListFiles(true)
 	if err != nil {
 		return err
 	}
+
 	for _, filename := range files {
-		dataFile, err := os.Open(filename)
-		if err != nil {
-			return err
-		}
-
-		info, err := dataFile.Stat()
-		if err != nil {
-			dataFile.Close()
-			return err
-		}
-
 		target, err := p.NormalizeFilename(filename)
 		if err != nil {
-			dataFile.Close()
 			return err
 		}
 
-		fileHeader := header
-		fileHeader.Name = target
-		fileHeader.Size = info.Size()
-		fileHeader.Mode = int64(info.Mode().Perm())
-		fileHeader.ModTime = info.ModTime()
-		archive.WriteHeader(&fileHeader)
-		_, err = io.Copy(archive, dataFile)
+		info, err := os.Stat(filename)
 		if err != nil {
-			dataFile.Close()
 			return err
 		}
-		dataFile.Close()
+
+		header, err := tar.FileInfoHeader(info, filename)
+		if err != nil {
+			return err
+		}
+
+		header.Name = target
+		header.Uid = 0
+		header.Gid = 0
+		header.Uname = "root"
+		header.Gname = "root"
+
+		archive.WriteHeader(header)
+		if !info.IsDir() {
+			dataFile, err := os.Open(filename)
+
+			if err != nil {
+				return err
+			}
+
+			_, err = io.Copy(archive, dataFile)
+			dataFile.Close()
+
+			if err != nil {
+				return err
+			}
+		}
 	}
+
 	return nil
 }
 
