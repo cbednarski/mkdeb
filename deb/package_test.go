@@ -69,7 +69,7 @@ func TestListControlFiles(t *testing.T) {
 func TestListFiles(t *testing.T) {
 	p := PackageSpecFixture(t)
 
-	files, err := p.ListFiles()
+	files, err := p.ListFiles(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestDuplicateDetector(t *testing.T) {
 		"package/binary": "/usr/local/bin/package1",
 	}
 
-	_, err := p.ListFiles()
+	_, err := p.ListFiles(false)
 	if err == nil || !strings.Contains(err.Error(), "Duplicate") {
 		t.Fatalf("Expected duplicate file error; found %+v", err)
 	}
