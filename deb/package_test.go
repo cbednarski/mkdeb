@@ -1,8 +1,10 @@
 package deb
 
 import (
+	"io/ioutil"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -234,5 +236,30 @@ func TestBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
 
+func BenchmarkBuild(b *testing.B) {
+	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-basic.json"))
+	if err != nil {
+		b.Fatalf("Failed to load fixture: %s", err)
+	}
+	p.AutoPath = path.Join("test-fixtures", "package1")
+	p.Version = "0.1.0"
+	benchTmp, err := ioutil.TempDir("", "")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer os.RemoveAll(benchTmp)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			tmpName, err := ioutil.TempFile(benchTmp, "output")
+			if err != nil {
+				b.Fatal(err)
+			}
+			err = p.Build(filepath.Join(benchTmp, tmpName.Name()))
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }

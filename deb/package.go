@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -282,6 +283,17 @@ func (p *PackageSpec) Build(target string) error {
 	if err != nil {
 		return err
 	}
+	ws, err := ioutil.TempDir(p.TempPath, "mkdeb")
+	if err != nil {
+		return fmt.Errorf("Could not create build workspace: %v", err)
+	}
+	defer func() {
+		err := os.RemoveAll(ws) // clean up
+		if err != nil {
+			log.Printf("Error cleaning up build workspace '%v': %v", ws, err)
+		}
+	}()
+
 	// 1. Create binary package (tar.gz format)
 	// 2. Create control file package (tar.gz format)
 	// 3. Create .deb / package (ar archive format)
@@ -312,24 +324,32 @@ func (p *PackageSpec) Build(target string) error {
 		return fmt.Errorf("Failed to write debian-binary: %s", err)
 	}
 
-	if err := p.CreateControlArchive("control.tar.gz"); err != nil {
+	controlFile := filepath.Join(ws, "control.tar.gz")
+	if err := p.CreateControlArchive(controlFile); err != nil {
 		return fmt.Errorf("Failed to compress control files: %s", err)
 	}
-	defer os.Remove("control.tar.gz")
+
 	// Copy the control file archive into ar (.deb)
-	if err := writeFileToAr(archive, baseHeader, "control.tar.gz"); err != nil {
+	if err := writeFileToAr(archive, baseHeader, controlFile); err != nil {
 		return err
 	}
 
-	if err := p.CreateDataArchive("data.tar.gz"); err != nil {
+	dataFile := filepath.Join(ws, "data.tar.gz")
+	if err := p.CreateDataArchive(dataFile); err != nil {
 		return fmt.Errorf("Failed to compress data files: %s", err)
 	}
-	defer os.Remove("data.tar.gz")
+
 	// Copy the data archive into the ar (.deb)
-	if err := writeFileToAr(archive, baseHeader, "data.tar.gz"); err != nil {
+	if err := writeFileToAr(archive, baseHeader, dataFile); err != nil {
 		return err
 	}
 
+	if err := archive.Close(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -780,7 +800,7 @@ func writeBytesToAr(archive *ar.Writer, header ar.Header, name string, data []by
 }
 
 func writeFileToAr(archive *ar.Writer, header ar.Header, source string) error {
-	header.Name = source
+	header.Name = filepath.Base(source)
 	file, err := os.Open(source)
 	if err != nil {
 		return err
