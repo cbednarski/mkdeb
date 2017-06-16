@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -282,54 +283,101 @@ func (p *PackageSpec) Build(target string) error {
 	if err != nil {
 		return err
 	}
+
 	// 1. Create binary package (tar.gz format)
 	// 2. Create control file package (tar.gz format)
 	// 3. Create .deb / package (ar archive format)
+
+	ws, err := ioutil.TempDir(p.TempPath, "mkdeb")
+	if err != nil {
+		return fmt.Errorf("Could not create build workspace: %v", err)
+	}
+	defer func() {
+		err := os.RemoveAll(ws) // clean up
+		if err != nil {
+			log.Printf("Error cleaning up build workspace '%v': %v", ws, err)
+		}
+	}()
+
+	errC := make(chan error, 10)
+	controlDoneC := make(chan bool, 1)
+	controlFile := filepath.Join(ws, "control.tar.gz")
+	go func() {
+		if err := p.CreateControlArchive(controlFile); err != nil {
+			errC <- fmt.Errorf("Failed to compress control files: %s", err)
+			return
+		}
+		controlDoneC <- true
+	}()
+
+	dataDoneC := make(chan bool, 1)
+	dataFile := filepath.Join(ws, "data.tar.gz")
+	go func() {
+		if err := p.CreateDataArchive(dataFile); err != nil {
+			errC <- fmt.Errorf("Failed to compress data files: %s", err)
+			return
+		}
+		dataDoneC <- true
+	}()
 
 	err = os.MkdirAll(target, 0755)
 	if err != nil {
 		return fmt.Errorf("Unable to create target directory %q: %s", target, err)
 	}
 
-	file, err := os.Create(path.Join(target, p.Filename()))
+	file, err := os.Create(filepath.Join(ws, p.Filename()))
 	if err != nil {
 		return fmt.Errorf("Failed to create build target: %s", err)
 	}
+	defer file.Close()
 
 	archive := ar.NewWriter(file)
-
+	defer archive.Close()
 	archiveCreationTime := time.Now()
-
 	baseHeader := ar.Header{
 		ModTime: archiveCreationTime,
 		Uid:     0,
 		Gid:     0,
 		Mode:    0600,
 	}
-
 	// Write the debian binary version (hard-coded to 2.0)
 	if err := writeBytesToAr(archive, baseHeader, "debian-binary", []byte("2.0\n")); err != nil {
 		return fmt.Errorf("Failed to write debian-binary: %s", err)
 	}
-
-	if err := p.CreateControlArchive("control.tar.gz"); err != nil {
-		return fmt.Errorf("Failed to compress control files: %s", err)
+control:
+	select {
+	case err := <-errC:
+		return err
+	case <-controlDoneC:
+		break control
 	}
-	defer os.Remove("control.tar.gz")
 	// Copy the control file archive into ar (.deb)
-	if err := writeFileToAr(archive, baseHeader, "control.tar.gz"); err != nil {
+	if err := writeFileToAr(archive, baseHeader, controlFile); err != nil {
 		return err
 	}
-
-	if err := p.CreateDataArchive("data.tar.gz"); err != nil {
-		return fmt.Errorf("Failed to compress data files: %s", err)
+data:
+	select {
+	case err := <-errC:
+		return err
+	case <-dataDoneC:
+		break data
 	}
-	defer os.Remove("data.tar.gz")
 	// Copy the data archive into the ar (.deb)
-	if err := writeFileToAr(archive, baseHeader, "data.tar.gz"); err != nil {
+	if err := writeFileToAr(archive, baseHeader, dataFile); err != nil {
 		return err
 	}
-
+	if err := archive.Close(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	// Move the resulting archive from the temp directory to the target
+	if err := os.Rename(
+		filepath.Join(ws, p.Filename()),
+		filepath.Join(target, p.Filename())); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -560,6 +608,7 @@ func (p *PackageSpec) CalculateChecksums() ([]byte, error) {
 
 // CreateDataArchive creates
 func (p *PackageSpec) CreateDataArchive(target string) error {
+
 	file, err := os.Create(target)
 	if err != nil {
 		return fmt.Errorf("Failed to create data archive %q: %s", target, err)
@@ -639,7 +688,6 @@ func (p *PackageSpec) CreateControlArchive(target string) error {
 	zipwriter := pgzip.NewWriter(file)
 	defer zipwriter.Close()
 	archive := tar.NewWriter(zipwriter)
-	defer archive.Close()
 
 	header := tar.Header{
 		Mode:    0644,
