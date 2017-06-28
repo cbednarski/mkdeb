@@ -153,13 +153,14 @@ type PackageSpec struct {
 	Description  string `json:"description"`
 
 	// Optional Fields
-	Depends   []string `json:"depends"`
-	Conflicts []string `json:"conflicts,omitempty"`
-	Breaks    []string `json:"breaks,omitempty"`
-	Replaces  []string `json:"replaces,omitempty"`
-	Section   string   `json:"section"`  // Defaults to "default"
-	Priority  string   `json:"priority"` // Defaults to "extra"
-	Homepage  string   `json:"homepage"`
+	Depends    []string `json:"depends"`
+	PreDepends []string `json:"preDepends"`
+	Conflicts  []string `json:"conflicts,omitempty"`
+	Breaks     []string `json:"breaks,omitempty"`
+	Replaces   []string `json:"replaces,omitempty"`
+	Section    string   `json:"section"`  // Defaults to "default"
+	Priority   string   `json:"priority"` // Defaults to "extra"
+	Homepage   string   `json:"homepage"`
 
 	// Control Scripts
 	Preinst  string `json:"preinst"`
@@ -185,6 +186,7 @@ func DefaultPackageSpec() *PackageSpec {
 		Section:   "default",
 		Priority:  "extra",
 		AutoPath:  "deb-pkg",
+		PreDepends:   make([]string, 0),
 		Depends:   make([]string, 0),
 		Conflicts: make([]string, 0),
 		Breaks:    make([]string, 0),
@@ -247,6 +249,11 @@ func (p *PackageSpec) Validate(buildTime bool) error {
 	for _, dep := range p.Depends {
 		if !reDepends.MatchString(dep) {
 			return fmt.Errorf("Dependency %q is invalid; expected something like 'libc (= 5.1.2)' matching %q", dep, reDepends.String())
+		}
+	}
+	for _, dep := range p.PreDepends {
+		if !reDepends.MatchString(dep) {
+			return fmt.Errorf("PreDependency %q is invalid; expected something like 'libc (= 5.1.2)' matching %q", dep, reDepends.String())
 		}
 	}
 	for _, replace := range p.Replaces {
@@ -810,6 +817,9 @@ Version: {{ .Version }}
 Architecture: {{ .Architecture}}
 Maintainer: {{ .Maintainer }}
 Installed-Size: {{ .InstalledSize }}
+{{- if (len .PreDepends) gt 0 }}
+Pre-Depends: {{ join .PreDepends }}
+{{- end -}}
 {{- if (len .Depends) gt 0 }}
 Depends: {{ join .Depends }}
 {{- end -}}

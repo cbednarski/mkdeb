@@ -65,6 +65,36 @@ Description: A CLI tool for building debian packages
 	}
 }
 
+func TestRenderControlFileWithPreDepends(t *testing.T) {
+	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-predepends.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p.Conflicts = []string{}
+	p.Version = "0.1.0"
+
+	expected := `Package: mkdeb
+Version: 0.1.0
+Architecture: amd64
+Maintainer: Chris Bednarski <banzaimonkey@gmail.com>
+Installed-Size: 0
+Pre-Depends: wget, tree
+Section: default
+Priority: extra
+Homepage: https://github.com/cbednarski/mkdeb
+Description: A CLI tool for building debian packages
+`
+	buf, err := p.RenderControlFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(buf) != expected {
+		t.Fatalf("Control file did not match expected\n%s\n--Found--\n%s\n", expected, string(buf))
+	}
+}
+
 func TestRenderControlFileWithReplaces(t *testing.T) {
 	p, err := NewPackageSpecFromFile(path.Join("test-fixtures", "example-replaces.json"))
 	if err != nil {
