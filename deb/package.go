@@ -13,7 +13,6 @@
 package deb
 
 import (
-	"archive/tar"
 	"bytes"
 	"crypto/md5"
 	"encoding/hex"
@@ -29,6 +28,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/cbednarski/mkdeb/deb/tar"
 
 	"github.com/klauspost/pgzip"
 	"github.com/laher/argo/ar"
