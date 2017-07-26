@@ -77,7 +77,7 @@ var (
 // WriteHeader calls Flush if it is not the first header.
 // Calling after a Close will return ErrWriteAfterClose.
 func (tw *Writer) WriteHeader(hdr *Header) error {
-	return tw.writeHeader(hdr, true)
+	return tw.writeHeader(hdr, false)
 }
 
 // WriteHeader writes hdr and prepares to accept the file's contents.
@@ -94,6 +94,51 @@ func (tw *Writer) writeHeader(hdr *Header, allowPax bool) error {
 	}
 	if tw.err != nil {
 		return tw.err
+	}
+
+	if len(hdr.Name) > 100 {
+		header := &tw.hdrBuff
+		copy(header[:], zeroBlock[:])
+
+		longName := hdr.Name + "\x00"
+		hdr.Name = hdr.Name[:100]
+
+		var f formatter
+		v7 := header.V7()
+		v7.TypeFlag()[0] = TypeGNULongName
+		f.formatString(v7.Name(), "././@LongLink")
+		f.formatOctal(v7.Mode(), 0644)
+		f.formatOctal(v7.UID(), 0)
+		f.formatOctal(v7.GID(), 0)
+		f.formatOctal(v7.Size(), int64(len(longName)))
+		f.formatOctal(v7.ModTime(), 0)
+
+		header.SetFormat(formatGNU)
+		// Check if there were any formatting errors.
+		if f.err != nil {
+			tw.err = f.err
+			return tw.err
+		}
+
+		tw.nb = int64(len(longName))
+		tw.pad = (blockSize - (tw.nb % blockSize)) % blockSize
+
+		_, tw.err = tw.w.Write(header[:])
+		if tw.err != nil {
+			return tw.err
+		}
+
+		_, err := tw.Write([]byte(longName))
+		if err != nil {
+			tw.err = err
+			return err
+		}
+
+		err = tw.Flush()
+		if err != nil {
+			tw.err = err
+			return err
+		}
 	}
 
 	// a map to hold pax header records, if any are needed
